@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engineering Activity Report - 2025-10-06</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem 1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .header-text {
+            flex: 1;
+        }
+
+        .header h1 {
+            font-size: 1.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .header .meta {
+            opacity: 0.9;
+            font-size: 0.85rem;
+        }
+
+        .nav-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .nav-link {
+            display: inline-block;
+            padding: 0.4rem 0.9rem;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 0.85rem;
+            transition: background 0.2s;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .summary {
+            background: white;
+            padding: 2rem;
+            margin: 1rem 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .summary h2 {
+            color: #667eea;
+            margin-bottom: 1.5rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            text-decoration: none;
+            display: block;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .stat-card .number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card .label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .developer {
+            background: white;
+            padding: 2rem;
+            margin: 1.5rem 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .developer h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+
+        .developer-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .mini-stat {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 5px;
+            text-align: center;
+            border-left: 4px solid #667eea;
+        }
+
+        .mini-stat .num {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .mini-stat .lbl {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+
+        .repos {
+            margin: 1.5rem 0;
+        }
+
+        .repos h3 {
+            color: #555;
+            margin-bottom: 0.75rem;
+            font-size: 1.1rem;
+        }
+
+        .repo-badges {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .repo-badge {
+            display: block;
+            padding: 0.75rem 1rem;
+            background: white;
+            color: #495057;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: monospace;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: 2px solid #e9ecef;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .repo-badge:hover {
+            border-color: #667eea;
+            box-shadow: 0 3px 8px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .repo-badge::before {
+            content: "📁 ";
+            margin-right: 0.5rem;
+        }
+
+        .next-action {
+            margin-top: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 5px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .next-action.awaiting {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+        }
+
+        .next-action.ready {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+
+        .next-action.completed {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .next-action.info {
+            background: #e7f3ff;
+            color: #004085;
+            border-left: 4px solid #007bff;
+        }
+
+        .section {
+            margin: 2rem 0;
+        }
+
+        .section h3 {
+            color: #555;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .item {
+            background: white;
+            padding: 1rem;
+            margin: 0.75rem 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: box-shadow 0.2s, transform 0.2s;
+        }
+
+        .item:hover {
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+            transform: translateX(2px);
+        }
+
+        .item h4 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .item h4 a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .item h4 a:hover {
+            text-decoration: underline;
+        }
+
+        .item-meta {
+            font-size: 0.85rem;
+            color: #666;
+            margin: 0.5rem 0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin: 0 0.25rem;
+        }
+
+        .badge-open {
+            background: #28a745;
+            color: white;
+        }
+
+        .badge-closed {
+            background: #dc3545;
+            color: white;
+        }
+
+        .badge-merged {
+            background: #6f42c1;
+            color: white;
+        }
+
+        .comment-preview {
+            background: white;
+            padding: 0.75rem;
+            margin-top: 0.5rem;
+            border-radius: 3px;
+            font-size: 0.9rem;
+            border-left: 3px solid #dee2e6;
+        }
+
+        .section h4 {
+            color: #495057;
+            font-size: 1rem;
+            margin: 1.5rem 0 0.75rem 0;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .section h4:first-child {
+            margin-top: 0;
+        }
+
+        .item h5 {
+            color: #333;
+            font-size: 0.95rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .item h5 a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .item h5 a:hover {
+            text-decoration: underline;
+        }
+
+        .repo-activities {
+            margin-top: 1rem;
+        }
+
+        /* Desktop optimizations - multi-column and reduced spacing */
+        @media (min-width: 1024px) {
+            .summary {
+                padding: 1.25rem;
+            }
+
+            .summary-grid {
+                grid-template-columns: repeat(5, 1fr);
+            }
+
+            .developer {
+                padding: 1.25rem;
+                margin: 1rem 0;
+            }
+
+            .developer-stats {
+                grid-template-columns: repeat(5, 1fr);
+            }
+
+            .section {
+                margin: 1rem 0;
+            }
+
+            .item {
+                padding: 0.75rem;
+                margin: 0.5rem 0;
+            }
+
+            .nav {
+                padding: 0.75rem;
+            }
+
+            .repos {
+                margin: 1rem 0;
+            }
+
+            .repo-badges {
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                position: relative;
+            }
+
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .header h1 {
+                font-size: 1.4rem;
+            }
+
+            .nav-links {
+                width: 100%;
+                flex-direction: column;
+            }
+
+            .nav-link {
+                text-align: center;
+                width: 100%;
+            }
+
+            .summary-grid,
+            .developer-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-card .number {
+                font-size: 2rem;
+            }
+
+            .repo-badges {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1>Engineering Activity Report</h1>
+                    <div class="meta">
+                        Generated: 2025-10-06 | Period: Last Week (2025-09-29 to 2025-10-05) |
+                        Organizations: euroblaze, wapsol
+                    </div>
+                </div>
+                <div class="nav-links">
+                    <a href="#summary" class="nav-link">Summary</a>
+                    <a href="#dev-VTV24710" class="nav-link">VTV24710</a>
+                    <a href="#dev-daikk115" class="nav-link">daikk115</a>
+                    <a href="#dev-euroblaze" class="nav-link">euroblaze</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+
+        <div id="summary" class="summary">
+            <h2>Summary Statistics</h2>
+            <div class="summary-grid">
+                <div class="stat-card">
+                    <div class="number">3</div>
+                    <div class="label">Active Developers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">21</div>
+                    <div class="label">Issues Created</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">14</div>
+                    <div class="label">PRs Created</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">53</div>
+                    <div class="label">Comments Posted</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">0</div>
+                    <div class="label">PR Reviews</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="dev-VTV24710" class="developer">
+            <h2>VTV24710</h2>
+
+            <div class="developer-stats">
+                <div class="mini-stat">
+                    <div class="num">1</div>
+                    <div class="lbl">Issues Created</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">12</div>
+                    <div class="lbl">PRs Created</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">24</div>
+                    <div class="lbl">Comments</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">0</div>
+                    <div class="lbl">PR Reviews</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">4</div>
+                    <div class="lbl">Repositories</div>
+                </div>
+            </div>
+
+            <div class="repos">
+                <h3>Active Repositories</h3>
+                <div class="repo-badges">
+                    <a href="#dev-VTV24710-repo-euroblaze-custom-ecotech" class="repo-badge">euroblaze/custom_ecotech</a>
+                    <a href="#dev-VTV24710-repo-euroblaze-erp" class="repo-badge">euroblaze/erp</a>
+                    <a href="#dev-VTV24710-repo-euroblaze-kj" class="repo-badge">euroblaze/kj</a>
+                    <a href="#dev-VTV24710-repo-euroblaze-tyroLED" class="repo-badge">euroblaze/tyroLED</a>
+                </div>
+            </div>
+
+            <div id="dev-VTV24710-repo-euroblaze-custom-ecotech" class="section">
+                <h3>euroblaze/custom_ecotech</h3>
+                <div class="repo-activities">
+                    <h4>Pull Requests Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/pull/156" target="_blank">#156 set the sale admin to see the opportunity field</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-10-06 | Updated: 2025-10-06 | Merged: 2025-10-06
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/pull/155" target="_blank">#155 feat: Add Ecotech Custom Project Flow Module</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-09-30 | Updated: 2025-09-30 | Merged: 2025-09-30
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <h4>Issue Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/154#issuecomment-3316613011" target="_blank">#154 Implement Pipeline Feedback System</a></h5>
+                        <div class="item-meta">Posted: 2025-09-22</div>
+                        <div class="comment-preview">Dear @euroblaze ,
+
+I have this question:
+- Is feedback here the messages in chatter from Quote ?
+
+Thank you !</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/154#issuecomment-3354630004" target="_blank">#154 Implement Pipeline Feedback System</a></h5>
+                        <div class="item-meta">Posted: 2025-10-01</div>
+                        <div class="comment-preview">> [@VTV24710](https://github.com/VTV24710)
+> 
+> Starting a Quotation/SO, any Sales user can back-link SO to a CRM Lead/Opportunity.
+
+Hello @euroblaze , this is already set by default in Tracking secti...</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/154#issuecomment-3369858233" target="_blank">#154 Implement Pipeline Feedback System</a></h5>
+                        <div class="item-meta">Posted: 2025-10-06</div>
+                        <div class="comment-preview">Yes, that is the default point; let me modify it</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/154#issuecomment-3369961597" target="_blank">#154 Implement Pipeline Feedback System</a></h5>
+                        <div class="item-meta">Posted: 2025-10-06</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+
+This is done on EcoTech-repair. You can take a quick look and let me know your feedback.
+
+Thank you!</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/153#issuecomment-3316610813" target="_blank">#153 Implement Material List Synchronization</a></h5>
+                        <div class="item-meta">Posted: 2025-09-22</div>
+                        <div class="comment-preview">Good morning @euroblaze ,
+I need to ask you some questions:
+1. Currently, our customer don't use BOM (in MRP) --> should we integrate MRP to them ?
+2.  We synchronize material lists to Product or Proj...</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/153#issuecomment-3369900162" target="_blank">#153 Implement Material List Synchronization</a></h5>
+                        <div class="item-meta">Posted: 2025-10-06</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+
+> Main point:
+> 
+> * If the Project > Stückliste gets updated, a new SO is generated. (this already works AFAIR)
+> * If the SO gets updated (adding materials/products), the Project...</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/152#issuecomment-3316562545" target="_blank">#152 Implement Visual Phase Control with Arrow Navigation</a></h5>
+                        <div class="item-meta">Posted: 2025-09-22</div>
+                        <div class="comment-preview">Good morning, @euroblaze !
+
+The requirement is clear, here is my estimation:
+- **Effort:** 3 hrs
+- **DD:** Sept 24th (Wk-39)</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/152#issuecomment-3354576804" target="_blank">#152 Implement Visual Phase Control with Arrow Navigation</a></h5>
+                        <div class="item-meta">Posted: 2025-10-01</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+We improved the color of project phase status:
+<img width="2544" height="1288" alt="Image" src="https://github.com/user-attachments/assets/2896d996-81db-425b-9496-e74dc4bbc0fd" />
+
+...</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/151#issuecomment-3316556003" target="_blank">#151 Extend Project Phases with Employee Assignment</a></h5>
+                        <div class="item-meta">Posted: 2025-09-22</div>
+                        <div class="comment-preview">Good morning, @euroblaze !
+
+The requirement is clear, here is my estimation:
+- **Effort:** 1 hrs
+- **DD:** Sept 23rd (Wk-39)</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/151#issuecomment-3354585402" target="_blank">#151 Extend Project Phases with Employee Assignment</a></h5>
+                        <div class="item-meta">Posted: 2025-10-01</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+Here is the description for this req:
+1. We define the standard employee for each project stage
+<img width="2544" height="1288" alt="Image" src="https://github.com/user-attachments/...</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/151#issuecomment-3369839195" target="_blank">#151 Extend Project Phases with Employee Assignment</a></h5>
+                        <div class="item-meta">Posted: 2025-10-06</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+As we implemented Taskset; there is feature that allows user to connect Project Phases with Tasks. When the Project change phase, employee in all tasks belong to that phase are assi...</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/150#issuecomment-3316553227" target="_blank">#150 Implement Reusable Task Sets Management</a></h5>
+                        <div class="item-meta">Posted: 2025-09-22</div>
+                        <div class="comment-preview">Good morning @euroblaze ,
+This should be linked to [the related issue](https://github.com/euroblaze/custom_ecotech/issues/148) because it is a small part of the functionality.</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/150#issuecomment-3369818775" target="_blank">#150 Implement Reusable Task Sets Management</a></h5>
+                        <div class="item-meta">Posted: 2025-10-06</div>
+                        <div class="comment-preview">Hello @euroblaze 
+> Implementation looks OK. However, what was the need of introducing sub-tasks?
+
+I thought that we need to prepare sub-tasks in taskset in case the taskset is not a single level beca...</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/149#issuecomment-3316547874" target="_blank">#149 Implement Task Management System</a></h5>
+                        <div class="item-meta">Posted: 2025-09-22</div>
+                        <div class="comment-preview">Good morning @euroblaze ,
+As I understand requirements, these are standard; we don't need to put effort into. </div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/149#issuecomment-3344702977" target="_blank">#149 Implement Task Management System</a></h5>
+                        <div class="item-meta">Posted: 2025-09-29</div>
+                        <div class="comment-preview">Hello @euroblaze , 
+Yes, you are right ! Btw, we are following new SO-Project so that we will hide the default function of Create Project via service product as you mentioned</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/149#issuecomment-3354566441" target="_blank">#149 Implement Task Management System</a></h5>
+                        <div class="item-meta">Posted: 2025-10-01</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+This is integrated into our project flow, please take a look at demo: [Create Project from Sales Order Using Task Set](https://vimeo.com/1123431582/97b1c01bef?ts=3000&share=copy)</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/148#issuecomment-3316545160" target="_blank">#148 Implement Project Creation from Quote Conversion</a></h5>
+                        <div class="item-meta">Posted: 2025-09-22</div>
+                        <div class="comment-preview">Good morning @euroblaze !
+
+The requirement is clear, here is my estimation:
+- **Effort:** 2.5 hrs
+- **DD:** Sept 23rd (Wk-39)</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/148#issuecomment-3354557320" target="_blank">#148 Implement Project Creation from Quote Conversion</a></h5>
+                        <div class="item-meta">Posted: 2025-10-01</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+Here is the demo for full flow, please help me take a look: [Create Project from Sales Order Using Task Set](https://vimeo.com/1123431582/97b1c01bef?ts=3000&share=copy)
+
+Best regard...</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/148#issuecomment-3369808877" target="_blank">#148 Implement Project Creation from Quote Conversion</a></h5>
+                        <div class="item-meta">Posted: 2025-10-06</div>
+                        <div class="comment-preview">> For this task with 2 subtasks (total 4 tasks), the task-form could carry a list of subtasks.
+> We did this for InnPro, and potentially could re-use that module?
+
+Hello @euroblaze ,
+Yes, we can reuse...</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dev-VTV24710-repo-euroblaze-erp" class="section">
+                <h3>euroblaze/erp</h3>
+                <div class="repo-activities">
+                    <h4>Issue Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/erp/issues/33#issuecomment-2613765468" target="_blank">#33 PDF-Footer for new company in v16</a></h5>
+                        <div class="item-meta">Posted: 2025-01-25</div>
+                        <div class="comment-preview">Hello @euroblaze , 
+Let me check</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dev-VTV24710-repo-euroblaze-kj" class="section">
+                <h3>euroblaze/kj</h3>
+                <div class="repo-activities">
+                    <h4>Issues Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/issues/84" target="_blank">#84 Req_28:  Pending imported contacts</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-09-29 | Updated: 2025-09-29
+                        </div>
+                        <div class="next-action awaiting">✏️ Awaiting response from @VTV24710</div>
+                    </div>
+                    <h4>Pull Requests Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/91" target="_blank">#91 Feature/quick update improvements</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-10-03 | Updated: 2025-10-03 | Merged: 2025-10-03
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/90" target="_blank">#90 Update __manifest__.py</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-10-03 | Updated: 2025-10-03 | Merged: 2025-10-03
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/89" target="_blank">#89 Website Theme Improvements and Translation System Implementation</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-10-03 | Updated: 2025-10-03 | Merged: 2025-10-03
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/88" target="_blank">#88 Fix/company logo sizing 126px updated</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-10-03 | Updated: 2025-10-03 | Merged: 2025-10-03
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/87" target="_blank">#87 fix: Company logo sizing and job URL improvements</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-closed">CLOSED</span>
+                            Created: 2025-10-03 | Updated: 2025-10-03
+                        </div>
+                        <div class="next-action completed">❌ Closed without merge</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/86" target="_blank">#86 Fix: Company logo sizing to 126px in job detail pages</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-closed">CLOSED</span>
+                            Created: 2025-10-03 | Updated: 2025-10-03
+                        </div>
+                        <div class="next-action completed">❌ Closed without merge</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/83" target="_blank">#83 feat: enhance multiple contacts display and logo handling</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-09-26 | Updated: 2025-10-03 | Merged: 2025-09-26
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/82" target="_blank">#82 feat: enhance multiple contacts display and logo handling across job board platform</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-09-26 | Updated: 2025-10-03 | Merged: 2025-09-26
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/81" target="_blank">#81 Add KJ Custom Website Theme for German Legal Job Board</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-09-25 | Updated: 2025-10-01 | Merged: 2025-09-25
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <h4>PR Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/pull/86#issuecomment-3364248470" target="_blank">#86 Fix: Company logo sizing to 126px in job detail pages</a></h5>
+                        <div class="item-meta">Posted: 2025-10-03</div>
+                        <div class="comment-preview">Closing this PR in favor of #87 which includes all the original changes plus additional improvements. The new PR includes:
+
+- Original company logo sizing fix (126px)
+- Updated job URL format for bett...</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/pull/81#issuecomment-3332859032" target="_blank">#81 Add KJ Custom Website Theme for German Legal Job Board</a></h5>
+                        <div class="item-meta">Posted: 2025-09-25</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+I push the current code for your reference.</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/pull/81#issuecomment-3354588804" target="_blank">#81 Add KJ Custom Website Theme for German Legal Job Board</a></h5>
+                        <div class="item-meta">Posted: 2025-10-01</div>
+                        <div class="comment-preview">Hello @euroblaze ,
+All is good, all thing you are watching are samples without real images</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/pull/79#issuecomment-3311618145" target="_blank">#79 The themes!</a></h5>
+                        <div class="item-meta">Posted: 2025-09-19</div>
+                        <div class="comment-preview">Thank you for your update @euroblaze . Let me take a look!</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dev-VTV24710-repo-euroblaze-tyroLED" class="section">
+                <h3>euroblaze/tyroLED</h3>
+                <div class="repo-activities">
+                    <h4>Pull Requests Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/tyroLED/pull/74" target="_blank">#74 Demo</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-10-01 | Updated: 2025-10-01 | Merged: 2025-10-01
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="dev-daikk115" class="developer">
+            <h2>daikk115</h2>
+
+            <div class="developer-stats">
+                <div class="mini-stat">
+                    <div class="num">1</div>
+                    <div class="lbl">Issues Created</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">0</div>
+                    <div class="lbl">PRs Created</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">3</div>
+                    <div class="lbl">Comments</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">0</div>
+                    <div class="lbl">PR Reviews</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">1</div>
+                    <div class="lbl">Repositories</div>
+                </div>
+            </div>
+
+            <div class="repos">
+                <h3>Active Repositories</h3>
+                <div class="repo-badges">
+                    <a href="#dev-daikk115-repo-euroblaze-re-cloud" class="repo-badge">euroblaze/re-cloud</a>
+                </div>
+            </div>
+
+            <div id="dev-daikk115-repo-euroblaze-re-cloud" class="section">
+                <h3>euroblaze/re-cloud</h3>
+                <div class="repo-activities">
+                    <h4>Issues Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/re-cloud/issues/91" target="_blank">#91 [Enhancement] HAProxy now Single Point of Failure</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-closed">CLOSED</span>
+                            Created: 2025-10-04 | Updated: 2025-10-05
+                        </div>
+                        <div class="next-action completed">✅ Completed</div>
+                    </div>
+                    <h4>Issue Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/re-cloud/issues/91#issuecomment-3368479416" target="_blank">#91 [Enhancement] HAProxy now Single Point of Failure</a></h5>
+                        <div class="item-meta">Posted: 2025-10-04</div>
+                        <div class="comment-preview">### Step 1: Make ingress binding on 80/443 on Host --> No need to reconfig HAPRoxy for anytime add new ingress anymore
+
+- Detach Public Port for 49.13.253.27 --> Get floating IP --> Associate with por...</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/re-cloud/issues/91#issuecomment-3368482649" target="_blank">#91 [Enhancement] HAProxy now Single Point of Failure</a></h5>
+                        <div class="item-meta">Posted: 2025-10-04</div>
+                        <div class="comment-preview">### High avaiable by VIP for 2 worker node
+
+- Create new port --> Get IP `10.112.2.41` --> Allow address pair that IP on 2 VM worker 2 & 3
+- Associate Floating IP `49.13.253.27` with `10.112.2.41`
+- S...</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/re-cloud/issues/91#issuecomment-3368485421" target="_blank">#91 [Enhancement] HAProxy now Single Point of Failure</a></h5>
+                        <div class="item-meta">Posted: 2025-10-04</div>
+                        <div class="comment-preview">Finnaly, we got this new architecture.
+- No need to config HAPRoxy for everytime change/add new domain anymore. 2 ingress controller will have same configuration by automatically update from k8s api-s...</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="dev-euroblaze" class="developer">
+            <h2>euroblaze</h2>
+
+            <div class="developer-stats">
+                <div class="mini-stat">
+                    <div class="num">19</div>
+                    <div class="lbl">Issues Created</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">2</div>
+                    <div class="lbl">PRs Created</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">26</div>
+                    <div class="lbl">Comments</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">0</div>
+                    <div class="lbl">PR Reviews</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">5</div>
+                    <div class="lbl">Repositories</div>
+                </div>
+            </div>
+
+            <div class="repos">
+                <h3>Active Repositories</h3>
+                <div class="repo-badges">
+                    <a href="#dev-euroblaze-repo-euroblaze-custom-ecotech" class="repo-badge">euroblaze/custom_ecotech</a>
+                    <a href="#dev-euroblaze-repo-euroblaze-erp" class="repo-badge">euroblaze/erp</a>
+                    <a href="#dev-euroblaze-repo-euroblaze-kj" class="repo-badge">euroblaze/kj</a>
+                    <a href="#dev-euroblaze-repo-euroblaze-re-cloud" class="repo-badge">euroblaze/re-cloud</a>
+                    <a href="#dev-euroblaze-repo-wapsol-rc4" class="repo-badge">wapsol/rc4</a>
+                </div>
+            </div>
+
+            <div id="dev-euroblaze-repo-euroblaze-custom-ecotech" class="section">
+                <h3>euroblaze/custom_ecotech</h3>
+                <div class="repo-activities">
+                    <h4>Issues Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/issues/154" target="_blank">#154 Implement Pipeline Feedback System</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-09-17 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">✏️ Awaiting response from @euroblaze</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/issues/153" target="_blank">#153 Implement Material List Synchronization</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-09-17 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">✏️ Awaiting response from @euroblaze</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/issues/152" target="_blank">#152 Implement Visual Phase Control with Arrow Navigation</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-09-17 | Updated: 2025-10-01
+                        </div>
+                        <div class="next-action awaiting">✏️ Awaiting response from @euroblaze</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/issues/151" target="_blank">#151 Extend Project Phases with Employee Assignment</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-09-17 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">✏️ Awaiting response from @euroblaze</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/issues/150" target="_blank">#150 Implement Reusable Task Sets Management</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-09-17 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">✏️ Awaiting response from @euroblaze</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/issues/149" target="_blank">#149 Implement Task Management System</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-closed">CLOSED</span>
+                            Created: 2025-09-17 | Updated: 2025-10-02
+                        </div>
+                        <div class="next-action completed">✅ Completed</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/custom_ecotech/issues/148" target="_blank">#148 Implement Project Creation from Quote Conversion</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-09-17 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">✏️ Awaiting response from @euroblaze</div>
+                    </div>
+                    <h4>Issue Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/154#issuecomment-3336965072" target="_blank">#154 Implement Pipeline Feedback System</a></h5>
+                        <div class="item-meta">Posted: 2025-09-26</div>
+                        <div class="comment-preview">@VTV24710 
+
+Starting a Quotation/SO, any Sales user can back-link SO to a CRM Lead/Opportunity.</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/154#issuecomment-3361721475" target="_blank">#154 Implement Pipeline Feedback System</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">> this is already set by default in Tracking section
+
+Yes only for debug mode?
+Sales Admin with non-debug wants to have the ability.
+Thanks!</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/153#issuecomment-3337142569" target="_blank">#153 Implement Material List Synchronization</a></h5>
+                        <div class="item-meta">Posted: 2025-09-26</div>
+                        <div class="comment-preview">No no.. we don't need BOM and MRP.
+There is already the "Stückliste" module in Projekt > Tab. This is
+responsible for syncing SOL-products, to Project.
+SO > Project is already available
+
+If Stück...</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/153#issuecomment-3362083491" target="_blank">#153 Implement Material List Synchronization</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">
+Main point: 
+
+- If the Project > Stückliste gets updated, a new SO is generated. (this already works AFAIR)
+- If the SO gets updated (adding materials/products), the Project > Stückliste should get a...</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/151#issuecomment-3362044129" target="_blank">#151 Extend Project Phases with Employee Assignment</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">> Each phase assigned to a standard employee
+
+OK
+
+> Automatic inheritance to phase tasks
+
+It's not clear how this works.
+IMO, for this to work, we have to expose the Project-phases on the Task-form.
+</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/150#issuecomment-3336840908" target="_blank">#150 Implement Reusable Task Sets Management</a></h5>
+                        <div class="item-meta">Posted: 2025-09-26</div>
+                        <div class="comment-preview">@VTV24710 
+Added this issue as sub to #148 👍 </div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/150#issuecomment-3362086766" target="_blank">#150 Implement Reusable Task Sets Management</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">Implementation looks OK.
+However, what was the need of introducing sub-tasks?</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/149#issuecomment-3336852051" target="_blank">#149 Implement Task Management System</a></h5>
+                        <div class="item-meta">Posted: 2025-09-26</div>
+                        <div class="comment-preview">Watch out..
+
+> Tasks editable after project creation
+
+1. Tasks must be created from the new Tasksets, selectable on popup (new) which appears after clicking [Associate Project / Projekt zuordnen] afte...</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/149#issuecomment-3350116148" target="_blank">#149 Implement Task Management System</a></h5>
+                        <div class="item-meta">Posted: 2025-09-30</div>
+                        <div class="comment-preview">> we are following new SO-Project
+
+I don't understand what is meant by this, unfortunately.</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/148#issuecomment-3336858087" target="_blank">#148 Implement Project Creation from Quote Conversion</a></h5>
+                        <div class="item-meta">Posted: 2025-09-26</div>
+                        <div class="comment-preview">@VTV24710 
+
+- After confirmation of SO, the [Associate Projekt / Projekt zuordnen] button appears.
+- New and Existing project can be associated.
+- In both cases a Taskset can be selected.</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/custom_ecotech/issues/148#issuecomment-3362069840" target="_blank">#148 Implement Project Creation from Quote Conversion</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">Looks like this works for the most part.
+
+For this task with 2 subtasks (total 4 tasks), the task-form could carry a list of subtasks.
+We did this for InnPro, and potentially could re-use that module?...</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dev-euroblaze-repo-euroblaze-erp" class="section">
+                <h3>euroblaze/erp</h3>
+                <div class="repo-activities">
+                    <h4>Issues Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/erp/issues/44" target="_blank">#44 Timesheets – AI, Grouping and Brand</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-02 | Updated: 2025-10-02
+                        </div>
+                        <div class="next-action awaiting">⏳ Awaiting community response</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/erp/issues/43" target="_blank">#43 Activate Inbound & Outgoing Mailserver</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-01 | Updated: 2025-10-02
+                        </div>
+                        <div class="next-action awaiting">⏳ Awaiting community response</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/erp/issues/42" target="_blank">#42 Cleanup Old v16 Server/VM</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-01 | Updated: 2025-10-01
+                        </div>
+                        <div class="next-action awaiting">📋 Awaiting triage</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/erp/issues/41" target="_blank">#41 License Update</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-01 | Updated: 2025-10-01
+                        </div>
+                        <div class="next-action awaiting">📋 Awaiting triage</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/erp/issues/40" target="_blank">#40 Straighten out AI Agents</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-01 | Updated: 2025-10-02
+                        </div>
+                        <div class="next-action awaiting">⏳ Awaiting community response</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/erp/issues/39" target="_blank">#39 v18 Upgrade</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-01 | Updated: 2025-10-02
+                        </div>
+                        <div class="next-action awaiting">⏳ Awaiting community response</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/erp/issues/38" target="_blank">#38 v18 PDF Footer</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-01 | Updated: 2025-10-02
+                        </div>
+                        <div class="next-action awaiting">⏳ Awaiting community response</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/erp/issues/33" target="_blank">#33 PDF-Footer for new company in v16</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-closed">CLOSED</span>
+                            Created: 2025-01-24 | Updated: 2025-10-01
+                        </div>
+                        <div class="next-action completed">✅ Completed</div>
+                    </div>
+                    <h4>Issue Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/erp/issues/44#issuecomment-3361481656" target="_blank">#44 Timesheets – AI, Grouping and Brand</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">@VTV24710 
+Est. & DD pls 🙏 </div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/erp/issues/43#issuecomment-3356902575" target="_blank">#43 Activate Inbound & Outgoing Mailserver</a></h5>
+                        <div class="item-meta">Posted: 2025-10-01</div>
+                        <div class="comment-preview">@VTV24710 
+Tested a bit on v18 and noticed that mails are always going from @poweron.software.
+How could we get these to go from @company to which Contact (res.partner) is assigned?
+Thanks
+
+<img width...</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/erp/issues/40#issuecomment-3361594042" target="_blank">#40 Straighten out AI Agents</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">@VTV24710 
+
+This would be essential to get started with marketing mails.
+The Inbound & Outbound mailers as well.
+Also all mails are going out from notifications@ as it seems.
+
+Littles things that we s...</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/erp/issues/39#issuecomment-3361486172" target="_blank">#39 v18 Upgrade</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">@VTV24710 – Est. & DD on 6 issues pls. Thx 🙏 </div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/erp/issues/38#issuecomment-3360388031" target="_blank">#38 v18 PDF Footer</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">![](https://github.com/user-attachments/assets/6f08c83d-1b50-4b9a-af14-3bc5376f0f38)</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/erp/issues/38#issuecomment-3360389892" target="_blank">#38 v18 PDF Footer</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">
+<img width="1446" height="1057" alt="Image" src="https://github.com/user-attachments/assets/e7a30dee-292d-4fda-b094-a18cf0c9118b" /></div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/erp/issues/38#issuecomment-3361122128" target="_blank">#38 v18 PDF Footer</a></h5>
+                        <div class="item-meta">Posted: 2025-10-02</div>
+                        <div class="comment-preview">Test with emojis! @VTV24710 
+
+<img width="648" height="200" alt="Image" src="https://github.com/user-attachments/assets/0278ad72-d817-4cfa-a20a-b40742ec290e" /></div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dev-euroblaze-repo-euroblaze-kj" class="section">
+                <h3>euroblaze/kj</h3>
+                <div class="repo-activities">
+                    <h4>Pull Requests Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/85" target="_blank">#85 Cleaning up kj_website_theme_v2|3|4.</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-merged">MERGED</span>
+                            Created: 2025-09-30 | Updated: 2025-09-30 | Merged: 2025-09-30
+                        </div>
+                        <div class="next-action completed">✅ Merged</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/euroblaze/kj/pull/79" target="_blank">#79 The themes!</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-09-19 | Updated: 2025-09-30
+                        </div>
+                        <div class="next-action awaiting">👀 Awaiting review</div>
+                    </div>
+                    <h4>Issue Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/issues/84#issuecomment-3344750775" target="_blank">#84 Req_28:  Pending imported contacts</a></h5>
+                        <div class="item-meta">Posted: 2025-09-29</div>
+                        <div class="comment-preview">Is there a python2 script that can be found on their old dev server for this import?
+
+If so, maybe just upgrade and cron?</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                    <h4>PR Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/pull/81#issuecomment-3350150117" target="_blank">#81 Add KJ Custom Website Theme for German Legal Job Board</a></h5>
+                        <div class="item-meta">Posted: 2025-09-30</div>
+                        <div class="comment-preview">```
+➜  custom_addons git:(demo) ✗ git stash
+Saved working directory and index state WIP on demo: 00d4655 The themes!
+
+➜  custom_addons git:(demo) ✗ git pull origin demo --rebase true
+fatal: could...</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/pull/81#issuecomment-3350230538" target="_blank">#81 Add KJ Custom Website Theme for German Legal Job Board</a></h5>
+                        <div class="item-meta">Posted: 2025-09-30</div>
+                        <div class="comment-preview">Was successfully able to merge locally, and load the template on browser.
+Image are missing, which I assume is work in progress? Or need I upload them in backend?
+Thanks 🙏 
+
+![](https://github.com...</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/pull/79#issuecomment-3311612193" target="_blank">#79 The themes!</a></h5>
+                        <div class="item-meta">Posted: 2025-09-19</div>
+                        <div class="comment-preview">@VTV24710 here are the theme files!</div>
+                        <div class="next-action awaiting">⏳ Awaiting response</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/kj/pull/79#issuecomment-3350190004" target="_blank">#79 The themes!</a></h5>
+                        <div class="item-meta">Posted: 2025-09-30</div>
+                        <div class="comment-preview">@VTV24710 calling attention!</div>
+                        <div class="next-action info">✓ Latest activity</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dev-euroblaze-repo-euroblaze-re-cloud" class="section">
+                <h3>euroblaze/re-cloud</h3>
+                <div class="repo-activities">
+                    <h4>Issue Comments</h4>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/re-cloud/issues/91#issuecomment-3368914478" target="_blank">#91 [Enhancement] HAProxy now Single Point of Failure</a></h5>
+                        <div class="item-meta">Posted: 2025-10-05</div>
+                        <div class="comment-preview">Thanks for this update.
+Keen to use it for magnetiq2.
+
+**m2deploy** is being built right now..
+It's purpose is to take source code from Github repo, and deploy it on k8s.
+
+User is the programmer, and ...</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/re-cloud/issues/91#issuecomment-3369004475" target="_blank">#91 [Enhancement] HAProxy now Single Point of Failure</a></h5>
+                        <div class="item-meta">Posted: 2025-10-05</div>
+                        <div class="comment-preview">@daikk115 
+
+X-nodes are controllers
+C-nodes are computes
+S-nodes are storage.
+
+Which of them run the "Cloud Router"?</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                    <div class="item">
+                        <h5>Comment on <a href="https://github.com/euroblaze/re-cloud/issues/91#issuecomment-3369005280" target="_blank">#91 [Enhancement] HAProxy now Single Point of Failure</a></h5>
+                        <div class="item-meta">Posted: 2025-10-05</div>
+                        <div class="comment-preview">As I understand, HAProxy has been removed and its functionalities have been moved into k8s.
+Does this mean that we have solved the spf problem?</div>
+                        <div class="next-action completed">✓ Resolved</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dev-euroblaze-repo-wapsol-rc4" class="section">
+                <h3>wapsol/rc4</h3>
+                <div class="repo-activities">
+                    <h4>Issues Created</h4>
+                    <div class="item">
+                        <h5><a href="https://github.com/wapsol/rc4/issues/11" target="_blank">#11 Redundant VPN Servers</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-06 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">📋 Awaiting triage</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/wapsol/rc4/issues/10" target="_blank">#10 VPN Capture</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-06 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">📋 Awaiting triage</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/wapsol/rc4/issues/9" target="_blank">#9 APT Distribution Packages</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-06 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">📋 Awaiting triage</div>
+                    </div>
+                    <div class="item">
+                        <h5><a href="https://github.com/wapsol/rc4/issues/8" target="_blank">#8 CloudCentral</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">OPEN</span>
+                            Created: 2025-10-06 | Updated: 2025-10-06
+                        </div>
+                        <div class="next-action awaiting">📋 Awaiting triage</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

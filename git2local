@@ -1,0 +1,1245 @@
+#!/usr/bin/env python3
+"""
+GitHub Engineering Activity Report Generator
+Generates comprehensive HTML reports of developer activity across GitHub organizations.
+"""
+
+import argparse
+import json
+import subprocess
+import sys
+from datetime import datetime, timedelta
+from collections import defaultdict
+from typing import Dict, List, Set
+
+
+def run_gh_command(query: str) -> dict:
+    """Execute a GitHub GraphQL query using gh CLI."""
+    cmd = ['gh', 'api', 'graphql', '-f', f'query={query}']
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return json.loads(result.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing gh command: {e.stderr}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON response: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def fetch_recent_activity(orgs: List[str], since_date: str) -> Dict:
+    """Fetch issues and PRs updated since the given date."""
+    org_query = ' '.join(f'org:{org}' for org in orgs)
+
+    # Fetch issues
+    issues_query = f'''
+    {{
+      search(query: "{org_query} is:issue updated:>={since_date}", type: ISSUE, first: 100) {{
+        issueCount
+        edges {{
+          node {{
+            ... on Issue {{
+              number
+              title
+              url
+              createdAt
+              updatedAt
+              state
+              repository {{
+                nameWithOwner
+              }}
+              author {{
+                login
+              }}
+              comments(first: 50) {{
+                totalCount
+                nodes {{
+                  author {{
+                    login
+                  }}
+                  createdAt
+                  updatedAt
+                  url
+                  body
+                }}
+              }}
+            }}
+          }}
+        }}
+      }}
+    }}
+    '''
+
+    # Fetch PRs
+    prs_query = f'''
+    {{
+      search(query: "{org_query} is:pr updated:>={since_date}", type: ISSUE, first: 100) {{
+        issueCount
+        edges {{
+          node {{
+            ... on PullRequest {{
+              number
+              title
+              url
+              createdAt
+              updatedAt
+              mergedAt
+              closedAt
+              state
+              repository {{
+                nameWithOwner
+              }}
+              author {{
+                login
+              }}
+              comments(first: 50) {{
+                totalCount
+                nodes {{
+                  author {{
+                    login
+                  }}
+                  createdAt
+                  updatedAt
+                  url
+                  body
+                }}
+              }}
+              reviews(first: 50) {{
+                totalCount
+                nodes {{
+                  author {{
+                    login
+                  }}
+                  createdAt
+                  state
+                }}
+              }}
+            }}
+          }}
+        }}
+      }}
+    }}
+    '''
+
+    print("Fetching issues...", file=sys.stderr)
+    issues_data = run_gh_command(issues_query)
+
+    print("Fetching PRs...", file=sys.stderr)
+    prs_data = run_gh_command(prs_query)
+
+    return {
+        'issues': issues_data,
+        'prs': prs_data
+    }
+
+
+def aggregate_by_developer(data: Dict, filter_devs: Set[str] = None) -> Dict:
+    """Aggregate all activity by developer."""
+    developer_activity = defaultdict(lambda: {
+        'issues_created': [],
+        'issues_commented': [],
+        'prs_created': [],
+        'prs_reviewed': [],
+        'prs_commented': [],
+        'repos': set(),
+        'by_repo': defaultdict(lambda: {
+            'issues_created': [],
+            'issues_commented': [],
+            'prs_created': [],
+            'prs_reviewed': [],
+            'prs_commented': []
+        }),
+        'total_comments': 0,
+        'total_issues': 0,
+        'total_prs': 0,
+        'total_reviews': 0
+    })
+
+    # Process issues
+    for edge in data['issues']['data']['search']['edges']:
+        issue = edge['node']
+        author = issue['author']['login'] if issue['author'] else 'ghost'
+
+        if filter_devs and author not in filter_devs:
+            # Still check comments even if author is filtered
+            pass
+        else:
+            repo_name = issue['repository']['nameWithOwner']
+            developer_activity[author]['issues_created'].append(issue)
+            developer_activity[author]['repos'].add(repo_name)
+            developer_activity[author]['by_repo'][repo_name]['issues_created'].append(issue)
+            developer_activity[author]['total_issues'] += 1
+
+        # Process issue comments
+        for comment in issue['comments']['nodes']:
+            commenter = comment['author']['login'] if comment['author'] else 'ghost'
+            if not filter_devs or commenter in filter_devs:
+                repo_name = issue['repository']['nameWithOwner']
+                comment_data = {'issue': issue, 'comment': comment}
+                developer_activity[commenter]['issues_commented'].append(comment_data)
+                developer_activity[commenter]['repos'].add(repo_name)
+                developer_activity[commenter]['by_repo'][repo_name]['issues_commented'].append(comment_data)
+                developer_activity[commenter]['total_comments'] += 1
+
+    # Process PRs
+    for edge in data['prs']['data']['search']['edges']:
+        pr = edge['node']
+        author = pr['author']['login'] if pr['author'] else 'ghost'
+
+        if filter_devs and author not in filter_devs:
+            pass
+        else:
+            repo_name = pr['repository']['nameWithOwner']
+            developer_activity[author]['prs_created'].append(pr)
+            developer_activity[author]['repos'].add(repo_name)
+            developer_activity[author]['by_repo'][repo_name]['prs_created'].append(pr)
+            developer_activity[author]['total_prs'] += 1
+
+        # Process PR comments
+        for comment in pr['comments']['nodes']:
+            commenter = comment['author']['login'] if comment['author'] else 'ghost'
+            if not filter_devs or commenter in filter_devs:
+                repo_name = pr['repository']['nameWithOwner']
+                comment_data = {'pr': pr, 'comment': comment}
+                developer_activity[commenter]['prs_commented'].append(comment_data)
+                developer_activity[commenter]['repos'].add(repo_name)
+                developer_activity[commenter]['by_repo'][repo_name]['prs_commented'].append(comment_data)
+                developer_activity[commenter]['total_comments'] += 1
+
+        # Process PR reviews
+        for review in pr['reviews']['nodes']:
+            reviewer = review['author']['login'] if review['author'] else 'ghost'
+            if not filter_devs or reviewer in filter_devs:
+                repo_name = pr['repository']['nameWithOwner']
+                review_data = {'pr': pr, 'review': review}
+                developer_activity[reviewer]['prs_reviewed'].append(review_data)
+                developer_activity[reviewer]['repos'].add(repo_name)
+                developer_activity[reviewer]['by_repo'][repo_name]['prs_reviewed'].append(review_data)
+                developer_activity[reviewer]['total_reviews'] += 1
+
+    # Convert sets to lists and defaultdicts to dicts for JSON serialization
+    for dev in developer_activity:
+        developer_activity[dev]['repos'] = sorted(list(developer_activity[dev]['repos']))
+        developer_activity[dev]['by_repo'] = dict(developer_activity[dev]['by_repo'])
+
+    # Filter out developers not in the filter list
+    if filter_devs:
+        developer_activity = {k: v for k, v in developer_activity.items() if k in filter_devs}
+
+    return dict(developer_activity)
+
+
+def determine_next_action(item: Dict, item_type: str, current_dev: str) -> tuple:
+    """
+    Determine the next action needed for an issue, PR, or comment.
+    Returns (action_text, action_type) where action_type is used for color coding.
+
+    action_type: 'awaiting', 'ready', 'completed', 'info'
+    """
+
+    if item_type == 'issue':
+        issue = item
+        author = issue['author']['login'] if issue['author'] else 'ghost'
+
+        if issue['state'] == 'CLOSED':
+            return ('✅ Completed', 'completed')
+
+        # OPEN issue
+        comments = issue.get('comments', {}).get('nodes', [])
+        if not comments:
+            return ('📋 Awaiting triage', 'awaiting')
+
+        # Check last comment
+        last_comment = comments[-1]
+        last_commenter = last_comment['author']['login'] if last_comment['author'] else 'ghost'
+
+        if last_commenter == author:
+            return ('⏳ Awaiting community response', 'awaiting')
+        else:
+            return (f'✏️ Awaiting response from @{author}', 'awaiting')
+
+    elif item_type == 'pr':
+        pr = item
+        author = pr['author']['login'] if pr['author'] else 'ghost'
+
+        if pr['state'] == 'MERGED':
+            return ('✅ Merged', 'completed')
+        elif pr['state'] == 'CLOSED':
+            return ('❌ Closed without merge', 'completed')
+
+        # OPEN PR
+        reviews = pr.get('reviews', {}).get('nodes', [])
+        if not reviews:
+            return ('👀 Awaiting review', 'awaiting')
+
+        # Check latest review
+        latest_review = reviews[-1]
+        review_state = latest_review.get('state', 'COMMENTED')
+
+        if review_state == 'CHANGES_REQUESTED':
+            return (f'🔧 Awaiting changes from @{author}', 'awaiting')
+        elif review_state == 'APPROVED':
+            return ('✅ Ready to merge', 'ready')
+        else:  # COMMENTED or other
+            return ('👀 Awaiting review', 'awaiting')
+
+    elif item_type == 'issue_comment':
+        parent_issue = item['issue']
+        comment = item['comment']
+        commenter = comment['author']['login'] if comment['author'] else 'ghost'
+
+        if parent_issue['state'] == 'CLOSED':
+            return ('✓ Resolved', 'completed')
+
+        # Check if this is the latest comment
+        all_comments = parent_issue.get('comments', {}).get('nodes', [])
+        if all_comments and all_comments[-1].get('url') == comment.get('url'):
+            return ('✓ Latest activity', 'info')
+        else:
+            return ('⏳ Awaiting response', 'awaiting')
+
+    elif item_type == 'pr_comment':
+        parent_pr = item['pr']
+        comment = item['comment']
+
+        if parent_pr['state'] in ['MERGED', 'CLOSED']:
+            return ('✓ Resolved', 'completed')
+
+        # Check if this is the latest comment
+        all_comments = parent_pr.get('comments', {}).get('nodes', [])
+        if all_comments and all_comments[-1].get('url') == comment.get('url'):
+            return ('✓ Latest activity', 'info')
+        else:
+            return ('⏳ Awaiting response', 'awaiting')
+
+    elif item_type == 'pr_review':
+        parent_pr = item['pr']
+
+        if parent_pr['state'] in ['MERGED', 'CLOSED']:
+            return ('✓ Resolved', 'completed')
+        else:
+            return ('⏳ Awaiting merge', 'awaiting')
+
+    return ('', 'info')
+
+
+def generate_html_report(developer_activity: Dict, report_date: str, since_date: str, end_date: str, period_label: str, orgs: List[str]) -> str:
+    """Generate a self-contained HTML report."""
+
+    # Calculate summary statistics
+    total_devs = len(developer_activity)
+    total_issues = sum(dev['total_issues'] for dev in developer_activity.values())
+    total_prs = sum(dev['total_prs'] for dev in developer_activity.values())
+    total_comments = sum(dev['total_comments'] for dev in developer_activity.values())
+    total_reviews = sum(dev['total_reviews'] for dev in developer_activity.values())
+
+    orgs_display = ', '.join(orgs)
+
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engineering Activity Report - {report_date}</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }}
+
+        .header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem 1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }}
+
+        .container {{
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }}
+
+        .header-content {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 2rem;
+        }}
+
+        .header-text {{
+            flex: 1;
+        }}
+
+        .header h1 {{
+            font-size: 1.75rem;
+            margin-bottom: 0.25rem;
+        }}
+
+        .header .meta {{
+            opacity: 0.9;
+            font-size: 0.85rem;
+        }}
+
+        .nav-links {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }}
+
+        .nav-link {{
+            display: inline-block;
+            padding: 0.4rem 0.9rem;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 0.85rem;
+            transition: background 0.2s;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }}
+
+        .nav-link:hover {{
+            background: rgba(255, 255, 255, 0.3);
+        }}
+
+        .summary {{
+            background: white;
+            padding: 2rem;
+            margin: 1rem 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }}
+
+        .summary h2 {{
+            color: #667eea;
+            margin-bottom: 1.5rem;
+        }}
+
+        .summary-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }}
+
+        .stat-card {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            text-decoration: none;
+            display: block;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+        }}
+
+        .stat-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }}
+
+        .stat-card .number {{
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }}
+
+        .stat-card .label {{
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }}
+
+        .developer {{
+            background: white;
+            padding: 2rem;
+            margin: 1.5rem 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }}
+
+        .developer h2 {{
+            color: #667eea;
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }}
+
+        .developer-stats {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }}
+
+        .mini-stat {{
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 5px;
+            text-align: center;
+            border-left: 4px solid #667eea;
+        }}
+
+        .mini-stat .num {{
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }}
+
+        .mini-stat .lbl {{
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }}
+
+        .repos {{
+            margin: 1.5rem 0;
+        }}
+
+        .repos h3 {{
+            color: #555;
+            margin-bottom: 0.75rem;
+            font-size: 1.1rem;
+        }}
+
+        .repo-badges {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 0.75rem;
+        }}
+
+        .repo-badge {{
+            display: block;
+            padding: 0.75rem 1rem;
+            background: white;
+            color: #495057;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: monospace;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: 2px solid #e9ecef;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }}
+
+        .repo-badge:hover {{
+            border-color: #667eea;
+            box-shadow: 0 3px 8px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }}
+
+        .repo-badge::before {{
+            content: "📁 ";
+            margin-right: 0.5rem;
+        }}
+
+        .next-action {{
+            margin-top: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 5px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }}
+
+        .next-action.awaiting {{
+            background: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+        }}
+
+        .next-action.ready {{
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }}
+
+        .next-action.completed {{
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #17a2b8;
+        }}
+
+        .next-action.info {{
+            background: #e7f3ff;
+            color: #004085;
+            border-left: 4px solid #007bff;
+        }}
+
+        .section {{
+            margin: 2rem 0;
+        }}
+
+        .section h3 {{
+            color: #555;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #667eea;
+        }}
+
+        .item {{
+            background: white;
+            padding: 1rem;
+            margin: 0.75rem 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: box-shadow 0.2s, transform 0.2s;
+        }}
+
+        .item:hover {{
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+            transform: translateX(2px);
+        }}
+
+        .item h4 {{
+            color: #333;
+            margin-bottom: 0.5rem;
+        }}
+
+        .item h4 a {{
+            color: #667eea;
+            text-decoration: none;
+        }}
+
+        .item h4 a:hover {{
+            text-decoration: underline;
+        }}
+
+        .item-meta {{
+            font-size: 0.85rem;
+            color: #666;
+            margin: 0.5rem 0;
+        }}
+
+        .badge {{
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin: 0 0.25rem;
+        }}
+
+        .badge-open {{
+            background: #28a745;
+            color: white;
+        }}
+
+        .badge-closed {{
+            background: #dc3545;
+            color: white;
+        }}
+
+        .badge-merged {{
+            background: #6f42c1;
+            color: white;
+        }}
+
+        .comment-preview {{
+            background: white;
+            padding: 0.75rem;
+            margin-top: 0.5rem;
+            border-radius: 3px;
+            font-size: 0.9rem;
+            border-left: 3px solid #dee2e6;
+        }}
+
+        .section h4 {{
+            color: #495057;
+            font-size: 1rem;
+            margin: 1.5rem 0 0.75rem 0;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #dee2e6;
+        }}
+
+        .section h4:first-child {{
+            margin-top: 0;
+        }}
+
+        .item h5 {{
+            color: #333;
+            font-size: 0.95rem;
+            margin-bottom: 0.5rem;
+        }}
+
+        .item h5 a {{
+            color: #667eea;
+            text-decoration: none;
+        }}
+
+        .item h5 a:hover {{
+            text-decoration: underline;
+        }}
+
+        .repo-activities {{
+            margin-top: 1rem;
+        }}
+
+        /* Desktop optimizations - multi-column and reduced spacing */
+        @media (min-width: 1024px) {{
+            .summary {{
+                padding: 1.25rem;
+            }}
+
+            .summary-grid {{
+                grid-template-columns: repeat(5, 1fr);
+            }}
+
+            .developer {{
+                padding: 1.25rem;
+                margin: 1rem 0;
+            }}
+
+            .developer-stats {{
+                grid-template-columns: repeat(5, 1fr);
+            }}
+
+            .section {{
+                margin: 1rem 0;
+            }}
+
+            .item {{
+                padding: 0.75rem;
+                margin: 0.5rem 0;
+            }}
+
+            .nav {{
+                padding: 0.75rem;
+            }}
+
+            .repos {{
+                margin: 1rem 0;
+            }}
+
+            .repo-badges {{
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            }}
+        }}
+
+        @media (max-width: 768px) {{
+            .header {{
+                position: relative;
+            }}
+
+            .header-content {{
+                flex-direction: column;
+                gap: 1rem;
+            }}
+
+            .header h1 {{
+                font-size: 1.4rem;
+            }}
+
+            .nav-links {{
+                width: 100%;
+                flex-direction: column;
+            }}
+
+            .nav-link {{
+                text-align: center;
+                width: 100%;
+            }}
+
+            .summary-grid,
+            .developer-stats {{
+                grid-template-columns: 1fr;
+            }}
+
+            .stat-card .number {{
+                font-size: 2rem;
+            }}
+
+            .repo-badges {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1>Engineering Activity Report</h1>
+                    <div class="meta">
+                        Generated: {report_date} | Period: {period_label} ({since_date} to {end_date}) |
+                        Organizations: {orgs_display}
+                    </div>
+                </div>
+                <div class="nav-links">
+                    <a href="#summary" class="nav-link">Summary</a>
+'''
+
+    # Add developer navigation links
+    for dev in sorted(developer_activity.keys()):
+        html += f'                    <a href="#dev-{dev}" class="nav-link">{dev}</a>\n'
+
+    html += '''                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+
+        <div id="summary" class="summary">
+            <h2>Summary Statistics</h2>
+            <div class="summary-grid">
+'''
+
+    # Add summary statistics
+    html += f'''                <div class="stat-card">
+                    <div class="number">{total_devs}</div>
+                    <div class="label">Active Developers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">{total_issues}</div>
+                    <div class="label">Issues Created</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">{total_prs}</div>
+                    <div class="label">PRs Created</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">{total_comments}</div>
+                    <div class="label">Comments Posted</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">{total_reviews}</div>
+                    <div class="label">PR Reviews</div>
+                </div>
+'''
+
+    html += '''            </div>
+        </div>
+'''
+
+    # Generate developer sections
+    for dev in sorted(developer_activity.keys()):
+        activity = developer_activity[dev]
+        html += f'''
+        <div id="dev-{dev}" class="developer">
+            <h2>{dev}</h2>
+
+            <div class="developer-stats">
+                <div class="mini-stat">
+                    <div class="num">{activity['total_issues']}</div>
+                    <div class="lbl">Issues Created</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">{activity['total_prs']}</div>
+                    <div class="lbl">PRs Created</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">{activity['total_comments']}</div>
+                    <div class="lbl">Comments</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">{activity['total_reviews']}</div>
+                    <div class="lbl">PR Reviews</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="num">{len(activity['repos'])}</div>
+                    <div class="lbl">Repositories</div>
+                </div>
+            </div>
+
+            <div class="repos">
+                <h3>Active Repositories</h3>
+                <div class="repo-badges">
+'''
+
+        for repo in activity['repos']:
+            repo_anchor = repo.replace('/', '-').replace('_', '-')
+            html += f'                    <a href="#dev-{dev}-repo-{repo_anchor}" class="repo-badge">{repo}</a>\n'
+
+        html += '''                </div>
+            </div>
+'''
+
+        # Activity organized by repository
+        for repo in activity['repos']:
+            repo_anchor = repo.replace('/', '-').replace('_', '-')
+            repo_data = activity['by_repo'][repo]
+
+            # Check if there's any activity for this repo
+            has_activity = (repo_data['issues_created'] or repo_data['prs_created'] or
+                           repo_data['issues_commented'] or repo_data['prs_commented'] or
+                           repo_data['prs_reviewed'])
+
+            if not has_activity:
+                continue
+
+            html += f'''
+            <div id="dev-{dev}-repo-{repo_anchor}" class="section">
+                <h3>{repo}</h3>
+                <div class="repo-activities">
+'''
+
+            # Issues created in this repo
+            if repo_data['issues_created']:
+                html += '                    <h4>Issues Created</h4>\n'
+                for issue in repo_data['issues_created']:
+                    state_badge = 'badge-open' if issue['state'] == 'OPEN' else 'badge-closed'
+                    next_action, action_type = determine_next_action(issue, 'issue', dev)
+                    html += f'''                    <div class="item">
+                        <h5><a href="{issue['url']}" target="_blank">#{issue['number']} {issue['title']}</a></h5>
+                        <div class="item-meta">
+                            <span class="badge {state_badge}">{issue['state']}</span>
+                            Created: {issue['createdAt'][:10]} | Updated: {issue['updatedAt'][:10]}
+                        </div>
+                        <div class="next-action {action_type}">{next_action}</div>
+                    </div>
+'''
+
+            # PRs created in this repo
+            if repo_data['prs_created']:
+                html += '                    <h4>Pull Requests Created</h4>\n'
+                for pr in repo_data['prs_created']:
+                    if pr['state'] == 'MERGED':
+                        state_badge = 'badge-merged'
+                        state_text = 'MERGED'
+                    elif pr['state'] == 'OPEN':
+                        state_badge = 'badge-open'
+                        state_text = 'OPEN'
+                    else:
+                        state_badge = 'badge-closed'
+                        state_text = 'CLOSED'
+
+                    next_action, action_type = determine_next_action(pr, 'pr', dev)
+                    html += f'''                    <div class="item">
+                        <h5><a href="{pr['url']}" target="_blank">#{pr['number']} {pr['title']}</a></h5>
+                        <div class="item-meta">
+                            <span class="badge {state_badge}">{state_text}</span>
+                            Created: {pr['createdAt'][:10]} | Updated: {pr['updatedAt'][:10]}'''
+                    if pr.get('mergedAt'):
+                        html += f''' | Merged: {pr['mergedAt'][:10]}'''
+                    html += f'''
+                        </div>
+                        <div class="next-action {action_type}">{next_action}</div>
+                    </div>
+'''
+
+            # Issue comments in this repo
+            if repo_data['issues_commented']:
+                html += '                    <h4>Issue Comments</h4>\n'
+                for item in repo_data['issues_commented']:
+                    issue = item['issue']
+                    comment = item['comment']
+                    comment_preview = comment['body'][:200] + '...' if len(comment['body']) > 200 else comment['body']
+                    next_action, action_type = determine_next_action(item, 'issue_comment', dev)
+                    html += f'''                    <div class="item">
+                        <h5>Comment on <a href="{comment['url']}" target="_blank">#{issue['number']} {issue['title']}</a></h5>
+                        <div class="item-meta">Posted: {comment['createdAt'][:10]}</div>
+                        <div class="comment-preview">{comment_preview}</div>
+                        <div class="next-action {action_type}">{next_action}</div>
+                    </div>
+'''
+
+            # PR comments in this repo
+            if repo_data['prs_commented']:
+                html += '                    <h4>PR Comments</h4>\n'
+                for item in repo_data['prs_commented']:
+                    pr = item['pr']
+                    comment = item['comment']
+                    comment_preview = comment['body'][:200] + '...' if len(comment['body']) > 200 else comment['body']
+                    next_action, action_type = determine_next_action(item, 'pr_comment', dev)
+                    html += f'''                    <div class="item">
+                        <h5>Comment on <a href="{comment['url']}" target="_blank">#{pr['number']} {pr['title']}</a></h5>
+                        <div class="item-meta">Posted: {comment['createdAt'][:10]}</div>
+                        <div class="comment-preview">{comment_preview}</div>
+                        <div class="next-action {action_type}">{next_action}</div>
+                    </div>
+'''
+
+            # PR reviews in this repo
+            if repo_data['prs_reviewed']:
+                html += '                    <h4>PR Reviews</h4>\n'
+                for item in repo_data['prs_reviewed']:
+                    pr = item['pr']
+                    review = item['review']
+                    next_action, action_type = determine_next_action(item, 'pr_review', dev)
+                    html += f'''                    <div class="item">
+                        <h5>Reviewed <a href="{pr['url']}" target="_blank">#{pr['number']} {pr['title']}</a></h5>
+                        <div class="item-meta">
+                            <span class="badge badge-open">{review['state']}</span>
+                            Reviewed: {review['createdAt'][:10]}
+                        </div>
+                        <div class="next-action {action_type}">{next_action}</div>
+                    </div>
+'''
+
+            html += '''                </div>
+            </div>
+'''
+
+        html += '        </div>\n'
+
+    html += '''    </div>
+</body>
+</html>
+'''
+
+    return html
+
+
+def calculate_date_range(period: str) -> tuple:
+    """
+    Calculate date range based on period code.
+    Returns (start_date, end_date, period_label)
+    """
+    now = datetime.now()
+    today = now.date()
+
+    if period == '7d':
+        start_date = today - timedelta(days=7)
+        return (start_date.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'), 'Past 7 Days')
+
+    elif period == 'week':
+        # This week (Monday to today)
+        monday = today - timedelta(days=today.weekday())
+        return (monday.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'), 'This Week')
+
+    elif period == 'lastweek':
+        # Last week (previous Monday to Sunday)
+        days_since_monday = today.weekday()
+        this_monday = today - timedelta(days=days_since_monday)
+        last_sunday = this_monday - timedelta(days=1)
+        last_monday = last_sunday - timedelta(days=6)
+        return (last_monday.strftime('%Y-%m-%d'), last_sunday.strftime('%Y-%m-%d'), 'Last Week')
+
+    elif period == '14d':
+        start_date = today - timedelta(days=14)
+        return (start_date.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'), 'Past 14 Days')
+
+    elif period == 'month':
+        # This month (1st to today)
+        start_date = today.replace(day=1)
+        return (start_date.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'), 'This Month')
+
+    elif period == 'lastmonth':
+        # Last month (entire previous month)
+        first_of_this_month = today.replace(day=1)
+        last_month_end = first_of_this_month - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        return (last_month_start.strftime('%Y-%m-%d'), last_month_end.strftime('%Y-%m-%d'), 'Last Month')
+
+    elif period == 'quarter':
+        # This quarter (Q1-Q4 start to today)
+        quarter = (now.month - 1) // 3
+        quarter_start_month = quarter * 3 + 1
+        start_date = today.replace(month=quarter_start_month, day=1)
+        quarter_num = quarter + 1
+        return (start_date.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'), f'This Quarter (Q{quarter_num})')
+
+    elif period == 'year':
+        # This year (Jan 1 to today)
+        start_date = today.replace(month=1, day=1)
+        return (start_date.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'), 'This Year')
+
+    else:
+        # Default to last week
+        days_since_monday = today.weekday()
+        this_monday = today - timedelta(days=days_since_monday)
+        last_sunday = this_monday - timedelta(days=1)
+        last_monday = last_sunday - timedelta(days=6)
+        return (last_monday.strftime('%Y-%m-%d'), last_sunday.strftime('%Y-%m-%d'), 'Last Week')
+
+
+def prompt_period_selection() -> str:
+    """Interactive menu to select time period."""
+    print("\nSelect time period:", file=sys.stderr)
+    print("  1. Last Week", file=sys.stderr)
+    print("  2. This Week", file=sys.stderr)
+    print("  3. Past 7 Days", file=sys.stderr)
+    print("  4. Past 14 Days", file=sys.stderr)
+    print("  5. This Month", file=sys.stderr)
+    print("  6. Last Month", file=sys.stderr)
+    print("  7. This Quarter", file=sys.stderr)
+    print("  8. This Year", file=sys.stderr)
+
+    period_map = {
+        '1': 'lastweek',
+        '2': 'week',
+        '3': '7d',
+        '4': '14d',
+        '5': 'month',
+        '6': 'lastmonth',
+        '7': 'quarter',
+        '8': 'year'
+    }
+
+    while True:
+        try:
+            choice = input("Enter choice [1-8] (default: 1): ").strip()
+            if not choice:
+                return 'lastweek'
+            if choice in period_map:
+                return period_map[choice]
+            print("Invalid choice. Please enter 1-8.", file=sys.stderr)
+        except (EOFError, KeyboardInterrupt):
+            print("\nUsing default: Last Week", file=sys.stderr)
+            return 'lastweek'
+
+
+def prompt_orgs_selection() -> list:
+    """Interactive prompt for GitHub organizations."""
+    default_orgs = "euroblaze,wapsol"
+    print(f"\nEnter GitHub organizations (comma-separated) [{default_orgs}]: ", file=sys.stderr, end='')
+
+    try:
+        orgs_input = input().strip()
+        if not orgs_input:
+            orgs_input = default_orgs
+        return [org.strip() for org in orgs_input.split(',') if org.strip()]
+    except (EOFError, KeyboardInterrupt):
+        print(f"\nUsing default: {default_orgs}", file=sys.stderr)
+        return default_orgs.split(',')
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Generate GitHub Engineering Activity Reports (EAR) for GitHub organizations',
+        epilog='''
+Examples:
+  %(prog)s                                              # Interactive mode (prompts for orgs and period)
+  %(prog)s --orgs=euroblaze,wapsol --period=week        # This week's activity
+  %(prog)s --orgs=euroblaze --period=month              # This month for euroblaze
+  %(prog)s --devs=VTV24710 --period=quarter             # Filter specific developer
+  %(prog)s --non-interactive                            # Use all defaults without prompts
+  %(prog)s --orgs=myorg --period=7d --devs=user1,user2  # Combine all filters
+
+Time Periods:
+  lastweek   - Last Week (default)
+  week       - This Week (Monday to today)
+  7d         - Past 7 Days
+  14d        - Past 14 Days
+  month      - This Month
+  lastmonth  - Last Month
+  quarter    - This Quarter
+  year       - This Year
+
+Output:
+  Reports are saved to: reports/EAR_YYYY-MM-DD.html
+        ''',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        '--orgs',
+        type=str,
+        default=None,
+        help='Comma-separated list of GitHub organizations (default: interactive prompt or euroblaze,wapsol). Example: euroblaze,wapsol'
+    )
+    parser.add_argument(
+        '--period',
+        type=str,
+        default=None,
+        choices=['lastweek', 'week', '7d', '14d', 'month', 'lastmonth', 'quarter', 'year'],
+        help='Time period for the report (default: interactive prompt or lastweek). See examples above for period options.'
+    )
+    parser.add_argument(
+        '--devs',
+        type=str,
+        default=None,
+        help='Comma-separated list of GitHub usernames to filter (default: all developers). Example: VTV24710,euroblaze,daikk115'
+    )
+    parser.add_argument(
+        '--non-interactive',
+        action='store_true',
+        help='Run without interactive prompts, using defaults or specified flags'
+    )
+    parser.add_argument(
+        '--days',
+        type=int,
+        default=None,
+        help='(Deprecated: use --period instead) Number of days to look back'
+    )
+
+    args = parser.parse_args()
+
+    # Determine if we're in interactive mode
+    interactive = not args.non_interactive
+
+    # Parse organizations
+    if args.orgs:
+        orgs = [org.strip() for org in args.orgs.split(',') if org.strip()]
+    elif interactive:
+        orgs = prompt_orgs_selection()
+    else:
+        orgs = ['euroblaze', 'wapsol']
+
+    print(f"\nOrganizations: {', '.join(orgs)}", file=sys.stderr)
+
+    # Determine time period
+    if args.days:
+        # Legacy --days flag
+        print("Warning: --days is deprecated, use --period instead", file=sys.stderr)
+        since_date = (datetime.now() - timedelta(days=args.days)).strftime('%Y-%m-%d')
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        period_label = f'Past {args.days} Days'
+    elif args.period:
+        since_date, end_date, period_label = calculate_date_range(args.period)
+    elif interactive:
+        period_code = prompt_period_selection()
+        since_date, end_date, period_label = calculate_date_range(period_code)
+    else:
+        since_date, end_date, period_label = calculate_date_range('lastweek')
+
+    print(f"Period: {period_label} ({since_date} to {end_date})", file=sys.stderr)
+
+    # Parse developer filter
+    filter_devs = None
+    if args.devs:
+        filter_devs = set(dev.strip() for dev in args.devs.split(','))
+        print(f"Filtering for developers: {', '.join(filter_devs)}", file=sys.stderr)
+
+    report_date = datetime.now().strftime('%Y-%m-%d')
+
+    print(f"\nGenerating report for activity from {since_date} to {end_date}...", file=sys.stderr)
+
+    # Fetch data
+    data = fetch_recent_activity(orgs, since_date)
+
+    # Aggregate by developer
+    print("Aggregating data by developer...", file=sys.stderr)
+    developer_activity = aggregate_by_developer(data, filter_devs)
+
+    if not developer_activity:
+        print("No activity found for the specified filters.", file=sys.stderr)
+        sys.exit(0)
+
+    print(f"Found activity for {len(developer_activity)} developer(s)", file=sys.stderr)
+
+    # Generate HTML report
+    print("Generating HTML report...", file=sys.stderr)
+    html = generate_html_report(developer_activity, report_date, since_date, end_date, period_label, orgs)
+
+    # Create reports directory if it doesn't exist
+    import os
+    os.makedirs('reports', exist_ok=True)
+
+    # Write report
+    output_file = f'reports/EAR_{report_date}.html'
+    with open(output_file, 'w') as f:
+        f.write(html)
+
+    print(f"\nReport generated successfully: {output_file}", file=sys.stderr)
+    print(f"Open in browser: file://{os.path.abspath(output_file)}", file=sys.stderr)
+
+
+if __name__ == '__main__':
+    main()
