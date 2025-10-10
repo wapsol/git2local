@@ -8,9 +8,11 @@ import argparse
 import json
 import subprocess
 import sys
+import os
 from datetime import datetime, timedelta
 from collections import defaultdict
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional
+from odoo_api import OdooAPI
 
 
 def run_gh_command(query: str) -> dict:
@@ -45,6 +47,7 @@ def fetch_recent_activity(orgs: List[str], since_date: str) -> Dict:
               createdAt
               updatedAt
               state
+              body
               repository {{
                 nameWithOwner
               }}
@@ -86,6 +89,7 @@ def fetch_recent_activity(orgs: List[str], since_date: str) -> Dict:
               mergedAt
               closedAt
               state
+              body
               repository {{
                 nameWithOwner
               }}
@@ -229,6 +233,153 @@ def aggregate_by_developer(data: Dict, filter_devs: Set[str] = None) -> Dict:
     return dict(developer_activity)
 
 
+def aggregate_odoo_tickets_by_user(tickets: List[Dict], users_map: Dict[int, str],
+                                    partners_map: Dict[int, str], stages_map: Dict[int, Dict],
+                                    filter_users: Set[str] = None) -> Dict:
+    """
+    Aggregate Odoo helpdesk tickets by user.
+
+    Args:
+        tickets: List of ticket dictionaries from Odoo
+        users_map: Mapping of user ID to user name
+        partners_map: Mapping of partner ID to partner name
+        stages_map: Mapping of stage ID to stage info
+        filter_users: Set of user names to filter (optional)
+
+    Returns:
+        Dictionary of user activity data
+    """
+    user_activity = defaultdict(lambda: {
+        'tickets_created': [],
+        'tickets_assigned': [],
+        'customers': set(),
+        'projects': set(),
+        'by_customer': defaultdict(list),
+        'by_project': defaultdict(list),
+        'total_tickets': 0,
+        'total_open': 0,
+        'total_closed': 0,
+        'by_priority': defaultdict(int)
+    })
+
+    for ticket in tickets:
+        # Get user info
+        user_id = ticket.get('user_id')
+        if not user_id:
+            continue
+
+        # user_id is typically a tuple (id, name) from Odoo
+        if isinstance(user_id, (list, tuple)) and len(user_id) >= 2:
+            uid, user_name = user_id[0], user_id[1]
+        else:
+            uid = user_id
+            user_name = users_map.get(uid, f'User {uid}')
+
+        # Filter by user if specified
+        if filter_users and user_name not in filter_users:
+            continue
+
+        # Get customer info
+        partner_id = ticket.get('partner_id')
+        if isinstance(partner_id, (list, tuple)) and len(partner_id) >= 2:
+            pid, customer_name = partner_id[0], partner_id[1]
+        elif partner_id:
+            pid = partner_id
+            customer_name = partners_map.get(pid, f'Customer {pid}')
+        else:
+            customer_name = 'No Customer'
+
+        # Get project info
+        project_id = ticket.get('project_id')
+        if isinstance(project_id, (list, tuple)) and len(project_id) >= 2:
+            project_name = project_id[1]
+        elif project_id:
+            project_name = f'Project {project_id}'
+        else:
+            project_name = 'No Project'
+
+        # Get stage info
+        stage_id = ticket.get('stage_id')
+        if isinstance(stage_id, (list, tuple)) and len(stage_id) >= 2:
+            sid, stage_name = stage_id[0], stage_id[1]
+        else:
+            sid = stage_id
+            stage_name = 'Unknown'
+
+        stage_info = stages_map.get(sid, {'name': stage_name, 'is_closed': False})
+        is_closed = stage_info.get('is_closed', False) or ticket.get('close_date')
+
+        # Enrich ticket data
+        enriched_ticket = {
+            **ticket,
+            'user_name': user_name,
+            'customer_name': customer_name,
+            'project_name': project_name,
+            'stage_name': stage_info.get('name', stage_name),
+            'is_closed': is_closed
+        }
+
+        # Aggregate data
+        user_activity[user_name]['tickets_assigned'].append(enriched_ticket)
+        user_activity[user_name]['customers'].add(customer_name)
+        user_activity[user_name]['projects'].add(project_name)
+        user_activity[user_name]['by_customer'][customer_name].append(enriched_ticket)
+        user_activity[user_name]['by_project'][project_name].append(enriched_ticket)
+        user_activity[user_name]['total_tickets'] += 1
+
+        if is_closed:
+            user_activity[user_name]['total_closed'] += 1
+        else:
+            user_activity[user_name]['total_open'] += 1
+
+        # Priority stats
+        priority = ticket.get('priority', '0')
+        user_activity[user_name]['by_priority'][priority] += 1
+
+    # Convert sets to sorted lists
+    for user in user_activity:
+        user_activity[user]['customers'] = sorted(list(user_activity[user]['customers']))
+        user_activity[user]['projects'] = sorted(list(user_activity[user]['projects']))
+        user_activity[user]['by_customer'] = dict(user_activity[user]['by_customer'])
+        user_activity[user]['by_project'] = dict(user_activity[user]['by_project'])
+        user_activity[user]['by_priority'] = dict(user_activity[user]['by_priority'])
+
+    return dict(user_activity)
+
+
+def determine_ticket_next_action(ticket: Dict) -> tuple:
+    """
+    Determine the next action needed for an Odoo helpdesk ticket.
+
+    Args:
+        ticket: Enriched ticket dictionary
+
+    Returns:
+        Tuple of (action_text, action_type) for color coding
+        action_type: 'awaiting', 'ready', 'completed', 'urgent'
+    """
+    is_closed = ticket.get('is_closed', False)
+    priority = ticket.get('priority', '0')
+
+    if is_closed:
+        return ('✅ Closed', 'completed')
+
+    # Check priority (Odoo priorities: 0=Low, 1=Medium, 2=High, 3=Urgent)
+    if priority in ['2', '3']:
+        return ('🔥 High Priority - Action Required', 'urgent')
+
+    stage_name = ticket.get('stage_name', '').lower()
+
+    if 'wait' in stage_name or 'pending' in stage_name:
+        return ('⏳ Awaiting Response', 'awaiting')
+    elif 'progress' in stage_name or 'working' in stage_name:
+        return ('🔧 In Progress', 'ready')
+    elif 'new' in stage_name or 'triage' in stage_name:
+        return ('📋 Awaiting Triage', 'awaiting')
+    else:
+        return ('📌 Open', 'awaiting')
+
+
 def determine_next_action(item: Dict, item_type: str, current_dev: str) -> tuple:
     """
     Determine the next action needed for an issue, PR, or comment.
@@ -323,17 +474,99 @@ def determine_next_action(item: Dict, item_type: str, current_dev: str) -> tuple
     return ('', 'info')
 
 
-def generate_html_report(developer_activity: Dict, report_date: str, since_date: str, end_date: str, period_label: str, orgs: List[str]) -> str:
+def strip_images_from_text(text: str) -> str:
+    """Remove image references from markdown/HTML text."""
+    import re
+
+    # Remove markdown images: ![alt](url)
+    text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', '', text)
+
+    # Remove HTML img tags: <img ... />
+    text = re.sub(r'<img[^>]*>', '', text)
+
+    # Remove extra whitespace/newlines left behind
+    text = re.sub(r'\n\s*\n', '\n', text)
+    text = text.strip()
+
+    return text
+
+
+def get_first_n_words(text: str, n: int = 10) -> str:
+    """Extract first N words from text, removing images and markdown formatting."""
+    import re
+
+    if not text:
+        return ""
+
+    # Remove images first
+    text = strip_images_from_text(text)
+
+    # Remove markdown code blocks
+    text = re.sub(r'```[^`]*```', '', text)
+    text = re.sub(r'`[^`]*`', '', text)
+
+    # Remove markdown links but keep the text: [text](url) -> text
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+
+    # Remove markdown formatting: **bold**, *italic*, __bold__, _italic_
+    text = re.sub(r'[*_]{1,2}([^*_]+)[*_]{1,2}', r'\1', text)
+
+    # Remove HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+
+    # Remove extra whitespace and newlines
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+
+    # Split into words and take first N
+    words = text.split()[:n]
+
+    if not words:
+        return ""
+
+    result = ' '.join(words)
+
+    # Add ellipsis if there are more words
+    if len(text.split()) > n:
+        result += '...'
+
+    return result
+
+
+def generate_html_report(developer_activity: Dict, report_date: str, since_date: str, end_date: str, period_label: str, orgs: List[str], refresh_rate_ms: int = None, odoo_user_activity: Dict = None) -> str:
     """Generate a self-contained HTML report."""
 
-    # Calculate summary statistics
+    # Template reader function
+    def read_template(filename):
+        """Read template file, return empty string if not found."""
+        try:
+            from pathlib import Path
+            template_dir = Path(__file__).parent / 'templates'
+            return (template_dir / filename).read_text()
+        except:
+            return ""
+
+    # Load speech query templates
+    speech_css = read_template('speech.css')
+    speech_button = read_template('speech_button.html')
+    speech_modal = read_template('speech_modal.html')
+    speech_js = read_template('speech.js')
+
+    # Calculate GitHub summary statistics
     total_devs = len(developer_activity)
     total_issues = sum(dev['total_issues'] for dev in developer_activity.values())
     total_prs = sum(dev['total_prs'] for dev in developer_activity.values())
     total_comments = sum(dev['total_comments'] for dev in developer_activity.values())
     total_reviews = sum(dev['total_reviews'] for dev in developer_activity.values())
 
+    # Calculate Odoo summary statistics
+    odoo_total_users = len(odoo_user_activity) if odoo_user_activity else 0
+    odoo_total_tickets = sum(user['total_tickets'] for user in odoo_user_activity.values()) if odoo_user_activity else 0
+    odoo_total_open = sum(user['total_open'] for user in odoo_user_activity.values()) if odoo_user_activity else 0
+    odoo_total_closed = sum(user['total_closed'] for user in odoo_user_activity.values()) if odoo_user_activity else 0
+
     orgs_display = ', '.join(orgs)
+    orgs_links = ', '.join([f'<a href="https://github.com/{org}" target="_blank" style="color: white; text-decoration: underline;">{org}</a>' for org in orgs])
 
     html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -363,6 +596,33 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             position: sticky;
             top: 0;
             z-index: 100;
+            transition: padding 0.3s ease;
+        }}
+
+        .header.minimized {{
+            padding: 0.5rem 1rem;
+        }}
+
+        .header.minimized .header-top {{
+            display: none;
+        }}
+
+        .header.minimized .header-controls {{
+            justify-content: space-between;
+            width: 100%;
+        }}
+
+        .header.minimized .filter-toggle {{
+            display: none;
+        }}
+
+        .header.minimized .minimized-nav-links {{
+            display: flex !important;
+        }}
+
+        .header.minimized h1 {{
+            font-size: 1.2rem;
+            margin: 0;
         }}
 
         .container {{
@@ -373,6 +633,12 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
 
         .header-content {{
             display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }}
+
+        .header-top {{
+            display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 2rem;
@@ -380,6 +646,38 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
 
         .header-text {{
             flex: 1;
+        }}
+
+        .header-controls {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+            justify-content: flex-end;
+        }}
+
+        .minimized-title {{
+            display: none;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin: 0;
+        }}
+
+        .header.minimized .minimized-title {{
+            display: block;
+        }}
+
+        .minimized-nav-links {{
+            display: none;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            flex: 1;
+            justify-content: flex-end;
+        }}
+
+        .minimized-nav-links .nav-link {{
+            padding: 0.3rem 0.6rem;
+            font-size: 0.75rem;
         }}
 
         .header h1 {{
@@ -415,6 +713,87 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             background: rgba(255, 255, 255, 0.3);
         }}
 
+        .filter-toggle {{
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            font-size: 0.85rem;
+        }}
+
+        .toggle-switch {{
+            position: relative;
+            width: 50px;
+            height: 24px;
+        }}
+
+        .toggle-switch input {{
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }}
+
+        .slider {{
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 24px;
+        }}
+
+        .slider:before {{
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }}
+
+        input:checked + .slider {{
+            background-color: #28a745;
+        }}
+
+        input:checked + .slider:before {{
+            transform: translateX(26px);
+        }}
+
+        .activity-card.closed-item {{
+            display: none;
+        }}
+
+        .section.empty-section {{
+            display: none;
+        }}
+
+        .developer.empty-developer {{
+            display: none;
+        }}
+
+        /* Live update animations */
+        .activity-card.updating {{
+            animation: cardPulse 0.5s ease-in-out;
+        }}
+
+        @keyframes cardPulse {{
+            0%, 100% {{
+                background: white;
+            }}
+            50% {{
+                background: #f0f8ff;
+            }}
+        }}
+
         .summary {{
             background: white;
             padding: 2rem;
@@ -437,7 +816,7 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
         .stat-card {{
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 1.5rem;
+            padding: 1rem;
             border-radius: 8px;
             text-align: center;
             text-decoration: none;
@@ -452,13 +831,13 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
         }}
 
         .stat-card .number {{
-            font-size: 2.5rem;
+            font-size: 1.8rem;
             font-weight: bold;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.3rem;
         }}
 
         .stat-card .label {{
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             opacity: 0.9;
         }}
 
@@ -476,6 +855,29 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             font-size: 1.8rem;
         }}
 
+        .developer-header {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }}
+
+        .developer-header h2 {{
+            margin: 0;
+            flex-shrink: 0;
+            font-size: 1.1rem;
+            min-width: 120px;
+        }}
+
+        .developer-header .developer-stats {{
+            display: flex;
+            gap: 0.5rem;
+            flex: 1;
+            margin: 0;
+            min-width: 0;
+        }}
+
         .developer-stats {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -485,22 +887,26 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
 
         .mini-stat {{
             background: #f8f9fa;
-            padding: 1rem;
+            padding: 0.4rem 0.6rem;
             border-radius: 5px;
             text-align: center;
             border-left: 4px solid #667eea;
+            min-width: 0;
         }}
 
         .mini-stat .num {{
-            font-size: 1.5rem;
+            font-size: 0.95rem;
             font-weight: bold;
             color: #667eea;
         }}
 
         .mini-stat .lbl {{
-            font-size: 0.85rem;
+            font-size: 0.65rem;
             color: #666;
-            margin-top: 0.25rem;
+            margin-top: 0.15rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }}
 
         .repos {{
@@ -577,6 +983,32 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             background: #e7f3ff;
             color: #004085;
             border-left: 4px solid #007bff;
+        }}
+
+        .next-action.urgent {{
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }}
+
+        /* Odoo-specific styles */
+        .odoo-section {{
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+        }}
+
+        .activity-type-ticket {{
+            background: #ff6b35;
+            color: white;
+        }}
+
+        .odoo-customer-badge {{
+            background: #f7931e;
+            color: white;
+            padding: 0.3rem 0.7rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            display: inline-block;
+            margin-right: 0.5rem;
         }}
 
         .section {{
@@ -690,6 +1122,112 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             margin-top: 1rem;
         }}
 
+        .cards-grid {{
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+            grid-auto-flow: row;
+        }}
+
+        .activity-card {{
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: box-shadow 0.2s, transform 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            min-width: 0;
+            overflow: hidden;
+        }}
+
+        .activity-card:hover {{
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+            transform: translateY(-2px);
+        }}
+
+        .activity-type-badge {{
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            width: fit-content;
+        }}
+
+        .activity-type-issue {{
+            background: #28a745;
+            color: white;
+        }}
+
+        .activity-type-pr {{
+            background: #6f42c1;
+            color: white;
+        }}
+
+        .activity-type-comment {{
+            background: #007bff;
+            color: white;
+        }}
+
+        .activity-type-review {{
+            background: #fd7e14;
+            color: white;
+        }}
+
+        .activity-card h5 {{
+            color: #333;
+            font-size: 0.95rem;
+            margin: 0;
+            line-height: 1.4;
+            overflow: hidden;
+            word-break: break-word;
+        }}
+
+        .activity-card h5 a {{
+            color: #667eea;
+            text-decoration: none;
+        }}
+
+        .activity-card h5 a:hover {{
+            text-decoration: underline;
+        }}
+
+        .activity-card .item-meta {{
+            font-size: 0.85rem;
+            color: #666;
+            margin: 0.25rem 0;
+        }}
+
+        .activity-card .comment-preview {{
+            background: #f8f9fa;
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border-radius: 3px;
+            font-size: 0.85rem;
+            border-left: 3px solid #dee2e6;
+            flex-grow: 1;
+        }}
+
+        .text-preview {{
+            background: #f8f9fa;
+            padding: 0.5rem;
+            margin: 0.5rem 0 0 0;
+            border-radius: 3px;
+            font-size: 0.8rem;
+            color: #666;
+            font-style: italic;
+            line-height: 1.4;
+        }}
+
+        .activity-card .next-action {{
+            margin-top: auto;
+        }}
+
         /* Desktop optimizations - multi-column and reduced spacing */
         @media (min-width: 1024px) {{
             .summary {{
@@ -697,7 +1235,7 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             }}
 
             .summary-grid {{
-                grid-template-columns: repeat(5, 1fr);
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             }}
 
             .developer {{
@@ -729,6 +1267,16 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             .repo-badges {{
                 grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             }}
+
+            .cards-grid {{
+                grid-template-columns: repeat(3, 1fr);
+            }}
+        }}
+
+        @media (min-width: 768px) and (max-width: 1023px) {{
+            .cards-grid {{
+                grid-template-columns: repeat(2, 1fr);
+            }}
         }}
 
         @media (max-width: 768px) {{
@@ -736,7 +1284,7 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
                 position: relative;
             }}
 
-            .header-content {{
+            .header-top {{
                 flex-direction: column;
                 gap: 1rem;
             }}
@@ -755,44 +1303,114 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
                 width: 100%;
             }}
 
+            .header-controls {{
+                width: 100%;
+                flex-direction: column;
+            }}
+
+            .filter-toggle {{
+                width: 100%;
+                justify-content: center;
+            }}
+
             .summary-grid,
             .developer-stats {{
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, 1fr);
             }}
 
             .stat-card .number {{
-                font-size: 2rem;
+                font-size: 1.5rem;
             }}
 
             .repo-badges {{
                 grid-template-columns: 1fr;
             }}
+
+            .cards-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+
+        /* Speech Query Interface Templates */
+        {speech_css}
+
+        /* Footer styles */
+        .footer {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            margin-top: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }}
+
+        .footer a {{
+            color: white;
+            text-decoration: underline;
+        }}
+
+        .footer a:hover {{
+            opacity: 0.8;
         }}
     </style>
 </head>
 <body>
-    <div class="header">
+    <div class="header" id="mainHeader">
         <div class="container">
             <div class="header-content">
-                <div class="header-text">
-                    <h1>Engineering Activity Report</h1>
-                    <div class="meta">
-                        Generated: {report_date} | Period: {period_label} ({since_date} to {end_date}) |
-                        Organizations: {orgs_display}
+                <div class="header-top">
+                    <div class="header-text">
+                        <h1><a href="#" onclick="window.location.href = window.location.pathname; return false;" style="color: white; text-decoration: none; cursor: pointer;">Engineering Activity Report</a></h1>
+                        <div class="meta">
+                            Generated: {report_date} | Period: {period_label} ({since_date} to {end_date})
+                        </div>
+                        <div class="meta">
+                            Organizations: {orgs_links}
+                        </div>
                     </div>
-                </div>
-                <div class="nav-links">
-                    <a href="#summary" class="nav-link">Summary</a>
+                    <div class="nav-links">
 '''
 
     # Add developer navigation links
     for dev in sorted(developer_activity.keys()):
-        html += f'                    <a href="#dev-{dev}" class="nav-link">{dev}</a>\n'
+        html += f'                        <a href="#dev-{dev}" class="nav-link">{dev}</a>\n'
 
-    html += '''                </div>
+    html += '''                    </div>
+                </div>
+                <div class="header-controls">
+                    <h1 class="minimized-title"><a href="#" onclick="window.scrollTo(0,0); return false;" style="color: white; text-decoration: none; cursor: pointer;">Engineering Activity Report</a></h1>
+                    <div class="minimized-nav-links">
+'''
+
+    # Add developer navigation links for minimized header
+    for dev in sorted(developer_activity.keys()):
+        html += f'                        <a href="#dev-{dev}" class="nav-link">{dev}</a>\n'
+
+    # Add Odoo users to minimized header if present
+    if odoo_user_activity:
+        for user_name in sorted(odoo_user_activity.keys()):
+            user_first_name = user_name.split()[0] if ' ' in user_name else user_name
+            html += f'                        <a href="#odoo-user-{user_name.replace(" ", "-")}" class="nav-link" style="background: rgba(255, 107, 53, 0.3);">{user_first_name}</a>\n'
+
+    html += '''                    </div>
+                    <div class="filter-toggle">
+                        <span>Show Closed</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="showClosedToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+
+    ''' + speech_modal + '''
 
     <div class="container">
 
@@ -801,31 +1419,57 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             <div class="summary-grid">
 '''
 
-    # Add summary statistics
-    html += f'''                <div class="stat-card">
+    # Add summary statistics with links to sections
+    html += f'''                <a href="#github-activity" class="stat-card">
                     <div class="number">{total_devs}</div>
                     <div class="label">Active Developers</div>
-                </div>
-                <div class="stat-card">
+                </a>
+                <a href="#github-activity" class="stat-card">
                     <div class="number">{total_issues}</div>
                     <div class="label">Issues Created</div>
-                </div>
-                <div class="stat-card">
+                </a>
+                <a href="#github-activity" class="stat-card">
                     <div class="number">{total_prs}</div>
                     <div class="label">PRs Created</div>
-                </div>
-                <div class="stat-card">
+                </a>
+                <a href="#github-activity" class="stat-card">
                     <div class="number">{total_comments}</div>
                     <div class="label">Comments Posted</div>
-                </div>
-                <div class="stat-card">
+                </a>
+                <a href="#github-activity" class="stat-card">
                     <div class="number">{total_reviews}</div>
                     <div class="label">PR Reviews</div>
-                </div>
+                </a>
+'''
+
+    # Add Odoo statistics if present
+    if odoo_user_activity:
+        html += f'''                <a href="#odoo-helpdesk" class="stat-card odoo-section">
+                    <div class="number">{odoo_total_users}</div>
+                    <div class="label">Helpdesk Users</div>
+                </a>
+                <a href="#odoo-helpdesk" class="stat-card odoo-section">
+                    <div class="number">{odoo_total_tickets}</div>
+                    <div class="label">Total Tickets</div>
+                </a>
+                <a href="#odoo-helpdesk" class="stat-card odoo-section">
+                    <div class="number">{odoo_total_open}</div>
+                    <div class="label">Open Tickets</div>
+                </a>
+                <a href="#odoo-helpdesk" class="stat-card odoo-section">
+                    <div class="number">{odoo_total_closed}</div>
+                    <div class="label">Closed Tickets</div>
+                </a>
 '''
 
     html += '''            </div>
         </div>
+'''
+
+    # Add GitHub Activity anchor
+    if developer_activity:
+        html += '''
+        <div id="github-activity" style="margin-top: 2rem;"></div>
 '''
 
     # Generate developer sections
@@ -833,28 +1477,29 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
         activity = developer_activity[dev]
         html += f'''
         <div id="dev-{dev}" class="developer">
-            <h2>{dev}</h2>
-
-            <div class="developer-stats">
-                <div class="mini-stat">
-                    <div class="num">{activity['total_issues']}</div>
-                    <div class="lbl">Issues Created</div>
-                </div>
-                <div class="mini-stat">
-                    <div class="num">{activity['total_prs']}</div>
-                    <div class="lbl">PRs Created</div>
-                </div>
-                <div class="mini-stat">
-                    <div class="num">{activity['total_comments']}</div>
-                    <div class="lbl">Comments</div>
-                </div>
-                <div class="mini-stat">
-                    <div class="num">{activity['total_reviews']}</div>
-                    <div class="lbl">PR Reviews</div>
-                </div>
-                <div class="mini-stat">
-                    <div class="num">{len(activity['repos'])}</div>
-                    <div class="lbl">Repositories</div>
+            <div class="developer-header">
+                <h2>{dev}</h2>
+                <div class="developer-stats">
+                    <div class="mini-stat">
+                        <div class="num">{activity['total_issues']}</div>
+                        <div class="lbl">Issues</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="num">{activity['total_prs']}</div>
+                        <div class="lbl">PRs</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="num">{activity['total_comments']}</div>
+                        <div class="lbl">Comments</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="num">{activity['total_reviews']}</div>
+                        <div class="lbl">Reviews</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="num">{len(activity['repos'])}</div>
+                        <div class="lbl">Repos</div>
+                    </div>
                 </div>
             </div>
 
@@ -876,40 +1521,155 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
             repo_anchor = repo.replace('/', '-').replace('_', '-')
             repo_data = activity['by_repo'][repo]
 
-            # Check if there's any activity for this repo
-            has_activity = (repo_data['issues_created'] or repo_data['prs_created'] or
-                           repo_data['issues_commented'] or repo_data['prs_commented'] or
-                           repo_data['prs_reviewed'])
+            # Consolidate activities by issue/PR number
+            items_map = {}  # key: (type, number), value: item data with counts
 
-            if not has_activity:
+            # Add issues created
+            for issue in repo_data['issues_created']:
+                key = ('issue', issue['number'])
+                if key not in items_map:
+                    items_map[key] = {
+                        'type': 'issue',
+                        'date': issue['updatedAt'],
+                        'data': issue,
+                        'dev_comment_count': 0,
+                        'latest_dev_comment': None
+                    }
+
+            # Add PRs created
+            for pr in repo_data['prs_created']:
+                key = ('pr', pr['number'])
+                if key not in items_map:
+                    items_map[key] = {
+                        'type': 'pr',
+                        'date': pr['updatedAt'],
+                        'data': pr,
+                        'dev_comment_count': 0,
+                        'dev_review_count': 0,
+                        'latest_dev_comment': None
+                    }
+
+            # Count issue comments by developer
+            for item in repo_data['issues_commented']:
+                issue = item['issue']
+                comment = item['comment']
+                key = ('issue', issue['number'])
+                if key not in items_map:
+                    items_map[key] = {
+                        'type': 'issue',
+                        'date': issue['updatedAt'],
+                        'data': issue,
+                        'dev_comment_count': 0,
+                        'latest_dev_comment': None
+                    }
+                items_map[key]['dev_comment_count'] += 1
+                # Track the most recent comment by this developer
+                if (items_map[key]['latest_dev_comment'] is None or
+                    comment.get('updatedAt', '') > items_map[key]['latest_dev_comment'].get('updatedAt', '')):
+                    items_map[key]['latest_dev_comment'] = comment
+
+            # Count PR comments by developer
+            for item in repo_data['prs_commented']:
+                pr = item['pr']
+                comment = item['comment']
+                key = ('pr', pr['number'])
+                if key not in items_map:
+                    items_map[key] = {
+                        'type': 'pr',
+                        'date': pr['updatedAt'],
+                        'data': pr,
+                        'dev_comment_count': 0,
+                        'dev_review_count': 0,
+                        'latest_dev_comment': None
+                    }
+                items_map[key]['dev_comment_count'] += 1
+                # Track the most recent comment by this developer
+                if (items_map[key]['latest_dev_comment'] is None or
+                    comment.get('updatedAt', '') > items_map[key]['latest_dev_comment'].get('updatedAt', '')):
+                    items_map[key]['latest_dev_comment'] = comment
+
+            # Count PR reviews by developer
+            for item in repo_data['prs_reviewed']:
+                pr = item['pr']
+                key = ('pr', pr['number'])
+                if key not in items_map:
+                    items_map[key] = {
+                        'type': 'pr',
+                        'date': pr['updatedAt'],
+                        'data': pr,
+                        'dev_comment_count': 0,
+                        'dev_review_count': 0
+                    }
+                items_map[key]['dev_review_count'] += 1
+
+            # Convert to list and sort by date
+            all_activities = list(items_map.values())
+
+            # Skip if no activity
+            if not all_activities:
                 continue
+
+            # Sort by date (most recent first)
+            all_activities.sort(key=lambda x: x['date'], reverse=True)
 
             html += f'''
             <div id="dev-{dev}-repo-{repo_anchor}" class="section">
                 <h3>{repo}</h3>
                 <div class="repo-activities">
+                    <div class="cards-grid">
 '''
 
-            # Issues created in this repo
-            if repo_data['issues_created']:
-                html += '                    <h4>Issues Created</h4>\n'
-                for issue in repo_data['issues_created']:
+            # Generate cards for all activities
+            for activity_item in all_activities:
+                activity_type = activity_item['type']
+                data = activity_item['data']
+                dev_comment_count = activity_item.get('dev_comment_count', 0)
+
+                if activity_type == 'issue':
+                    issue = data
+                    latest_comment = activity_item.get('latest_dev_comment')
                     state_badge = 'badge-open' if issue['state'] == 'OPEN' else 'badge-closed'
                     next_action, action_type = determine_next_action(issue, 'issue', dev)
-                    html += f'''                    <div class="item">
-                        <h5><a href="{issue['url']}" target="_blank">#{issue['number']} {issue['title']}</a></h5>
-                        <div class="item-meta">
-                            <span class="badge {state_badge}">{issue['state']}</span>
-                            Created: {issue['createdAt'][:10]} | Updated: {issue['updatedAt'][:10]}
+
+                    # Build activity status with comment count
+                    activity_parts = [next_action]
+                    if dev_comment_count > 0:
+                        activity_parts.append(f"💬 {dev_comment_count} comment{'s' if dev_comment_count != 1 else ''}")
+                    activity_status = " | ".join(activity_parts)
+
+                    # Convert date to DD.MM.YY format
+                    from datetime import datetime
+                    updated_date = datetime.strptime(issue['updatedAt'][:10], '%Y-%m-%d').strftime('%d.%m.%y')
+
+                    # Get text preview: prefer latest comment, fallback to issue body
+                    preview_text = ""
+                    if latest_comment and latest_comment.get('body'):
+                        preview_text = get_first_n_words(latest_comment['body'], 10)
+                    elif issue.get('body'):
+                        preview_text = get_first_n_words(issue['body'], 10)
+
+                    html += f'''                        <div class="activity-card" data-state="{issue['state']}" data-action-type="{action_type}" data-type="issue" data-repo="{repo}" data-number="{issue['number']}" data-total-comments="{issue['comments']['totalCount']}">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <div>
+                                    <span class="activity-type-badge activity-type-issue" style="margin-right: 0.5rem; margin-bottom: 0;">ISSUE</span>
+                                    <span class="badge {state_badge}">{issue['state']}</span>
+                                </div>
+                                <span class="item-meta" style="margin: 0;">Updated: {updated_date}</span>
+                            </div>
+                            <h5><a href="{issue['url']}" target="_blank">#{issue['number']} {issue['title']}</a></h5>'''
+                    if preview_text:
+                        html += f'''
+                            <div class="text-preview">{preview_text}</div>'''
+                    html += f'''
+                            <div class="next-action {action_type}">{activity_status}</div>
                         </div>
-                        <div class="next-action {action_type}">{next_action}</div>
-                    </div>
 '''
 
-            # PRs created in this repo
-            if repo_data['prs_created']:
-                html += '                    <h4>Pull Requests Created</h4>\n'
-                for pr in repo_data['prs_created']:
+                elif activity_type == 'pr':
+                    pr = data
+                    latest_comment = activity_item.get('latest_dev_comment')
+                    dev_review_count = activity_item.get('dev_review_count', 0)
+
                     if pr['state'] == 'MERGED':
                         state_badge = 'badge-merged'
                         state_text = 'MERGED'
@@ -921,75 +1681,439 @@ def generate_html_report(developer_activity: Dict, report_date: str, since_date:
                         state_text = 'CLOSED'
 
                     next_action, action_type = determine_next_action(pr, 'pr', dev)
-                    html += f'''                    <div class="item">
-                        <h5><a href="{pr['url']}" target="_blank">#{pr['number']} {pr['title']}</a></h5>
-                        <div class="item-meta">
-                            <span class="badge {state_badge}">{state_text}</span>
-                            Created: {pr['createdAt'][:10]} | Updated: {pr['updatedAt'][:10]}'''
-                    if pr.get('mergedAt'):
-                        html += f''' | Merged: {pr['mergedAt'][:10]}'''
+
+                    # Build activity status with comment and review counts
+                    activity_parts = [next_action]
+                    if dev_comment_count > 0:
+                        activity_parts.append(f"💬 {dev_comment_count} comment{'s' if dev_comment_count != 1 else ''}")
+                    if dev_review_count > 0:
+                        activity_parts.append(f"👁️ {dev_review_count} review{'s' if dev_review_count != 1 else ''}")
+                    activity_status = " | ".join(activity_parts)
+
+                    # Convert dates to DD.MM.YY format
+                    from datetime import datetime
+                    updated_date = datetime.strptime(pr['updatedAt'][:10], '%Y-%m-%d').strftime('%d.%m.%y')
+                    merged_date = datetime.strptime(pr['mergedAt'][:10], '%Y-%m-%d').strftime('%d.%m.%y') if pr.get('mergedAt') else None
+
+                    # Get text preview: prefer latest comment, fallback to PR body
+                    preview_text = ""
+                    if latest_comment and latest_comment.get('body'):
+                        preview_text = get_first_n_words(latest_comment['body'], 10)
+                    elif pr.get('body'):
+                        preview_text = get_first_n_words(pr['body'], 10)
+
+                    html += f'''                        <div class="activity-card" data-state="{pr['state']}" data-action-type="{action_type}" data-type="pr" data-repo="{repo}" data-number="{pr['number']}" data-total-comments="{pr['comments']['totalCount']}" data-total-reviews="{pr['reviews']['totalCount']}">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <div>
+                                    <span class="activity-type-badge activity-type-pr" style="margin-right: 0.5rem; margin-bottom: 0;">PULL REQUEST</span>
+                                    <span class="badge {state_badge}">{state_text}</span>
+                                </div>
+                                <span class="item-meta" style="margin: 0;">Updated: {updated_date}</span>
+                            </div>
+                            <h5><a href="{pr['url']}" target="_blank">#{pr['number']} {pr['title']}</a></h5>'''
+                    if merged_date:
+                        html += f'''
+                            <div class="item-meta" style="margin: 0.25rem 0;">Merged: {merged_date}</div>'''
+                    if preview_text:
+                        html += f'''
+                            <div class="text-preview">{preview_text}</div>'''
                     html += f'''
+                            <div class="next-action {action_type}">{activity_status}</div>
                         </div>
-                        <div class="next-action {action_type}">{next_action}</div>
-                    </div>
 '''
 
-            # Issue comments in this repo
-            if repo_data['issues_commented']:
-                html += '                    <h4>Issue Comments</h4>\n'
-                for item in repo_data['issues_commented']:
-                    issue = item['issue']
-                    comment = item['comment']
-                    comment_preview = comment['body'][:200] + '...' if len(comment['body']) > 200 else comment['body']
-                    next_action, action_type = determine_next_action(item, 'issue_comment', dev)
-                    html += f'''                    <div class="item">
-                        <h5>Comment on <a href="{comment['url']}" target="_blank">#{issue['number']} {issue['title']}</a></h5>
-                        <div class="item-meta">Posted: {comment['createdAt'][:10]}</div>
-                        <div class="comment-preview">{comment_preview}</div>
-                        <div class="next-action {action_type}">{next_action}</div>
-                    </div>
-'''
-
-            # PR comments in this repo
-            if repo_data['prs_commented']:
-                html += '                    <h4>PR Comments</h4>\n'
-                for item in repo_data['prs_commented']:
-                    pr = item['pr']
-                    comment = item['comment']
-                    comment_preview = comment['body'][:200] + '...' if len(comment['body']) > 200 else comment['body']
-                    next_action, action_type = determine_next_action(item, 'pr_comment', dev)
-                    html += f'''                    <div class="item">
-                        <h5>Comment on <a href="{comment['url']}" target="_blank">#{pr['number']} {pr['title']}</a></h5>
-                        <div class="item-meta">Posted: {comment['createdAt'][:10]}</div>
-                        <div class="comment-preview">{comment_preview}</div>
-                        <div class="next-action {action_type}">{next_action}</div>
-                    </div>
-'''
-
-            # PR reviews in this repo
-            if repo_data['prs_reviewed']:
-                html += '                    <h4>PR Reviews</h4>\n'
-                for item in repo_data['prs_reviewed']:
-                    pr = item['pr']
-                    review = item['review']
-                    next_action, action_type = determine_next_action(item, 'pr_review', dev)
-                    html += f'''                    <div class="item">
-                        <h5>Reviewed <a href="{pr['url']}" target="_blank">#{pr['number']} {pr['title']}</a></h5>
-                        <div class="item-meta">
-                            <span class="badge badge-open">{review['state']}</span>
-                            Reviewed: {review['createdAt'][:10]}
-                        </div>
-                        <div class="next-action {action_type}">{next_action}</div>
-                    </div>
-'''
-
-            html += '''                </div>
+            html += '''                    </div>
+                </div>
             </div>
 '''
 
         html += '        </div>\n'
 
+    # Generate Odoo Helpdesk sections if data is available
+    if odoo_user_activity:
+        html += '''
+        <div id="odoo-helpdesk" class="summary" style="margin-top: 3rem; border-top: 3px solid #ff6b35;">
+            <h2 style="color: #ff6b35;">Odoo Helpdesk Activity</h2>
+        </div>
+'''
+
+        for user_name in sorted(odoo_user_activity.keys()):
+            user_data = odoo_user_activity[user_name]
+            html += f'''
+        <div id="odoo-user-{user_name.replace(' ', '-')}" class="developer">
+            <div class="developer-header">
+                <h2 style="color: #ff6b35;">{user_name}</h2>
+                <div class="developer-stats">
+                    <div class="mini-stat" style="border-left-color: #ff6b35;">
+                        <div class="num" style="color: #ff6b35;">{user_data['total_tickets']}</div>
+                        <div class="lbl">Tickets</div>
+                    </div>
+                    <div class="mini-stat" style="border-left-color: #28a745;">
+                        <div class="num" style="color: #28a745;">{user_data['total_open']}</div>
+                        <div class="lbl">Open</div>
+                    </div>
+                    <div class="mini-stat" style="border-left-color: #17a2b8;">
+                        <div class="num" style="color: #17a2b8;">{user_data['total_closed']}</div>
+                        <div class="lbl">Closed</div>
+                    </div>
+                    <div class="mini-stat" style="border-left-color: #dc3545;">
+                        <div class="num" style="color: #dc3545;">{user_data['by_priority'].get('2', 0) + user_data['by_priority'].get('3', 0)}</div>
+                        <div class="lbl">High Pri</div>
+                    </div>
+                    <div class="mini-stat" style="border-left-color: #f7931e;">
+                        <div class="num" style="color: #f7931e;">{len(user_data['customers'])}</div>
+                        <div class="lbl">Customers</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="repos">
+                <h3>Customers & Projects</h3>
+                <div class="repo-badges">
+'''
+
+            # Add customer and project badges
+            for customer in user_data['customers']:
+                customer_anchor = customer.replace(' ', '-').replace('/', '-')
+                html += f'                    <a href="#odoo-user-{user_name.replace(" ", "-")}-customer-{customer_anchor}" class="repo-badge" style="border-color: #f7931e;">{customer}</a>\n'
+
+            html += '''                </div>
+            </div>
+'''
+
+            # Organize tickets by customer
+            for customer in sorted(user_data['by_customer'].keys()):
+                customer_anchor = customer.replace(' ', '-').replace('/', '-')
+                customer_tickets = user_data['by_customer'][customer]
+
+                if not customer_tickets:
+                    continue
+
+                # Sort tickets by write_date (most recent first)
+                customer_tickets.sort(key=lambda t: t.get('write_date', ''), reverse=True)
+
+                html += f'''
+            <div id="odoo-user-{user_name.replace(" ", "-")}-customer-{customer_anchor}" class="section">
+                <h3 style="border-bottom-color: #ff6b35;">{customer}</h3>
+                <div class="repo-activities">
+                    <div class="cards-grid">
+'''
+
+                # Generate ticket cards
+                for ticket in customer_tickets:
+                    ticket_id = ticket.get('id', 0)
+                    ticket_name = ticket.get('name', 'Untitled Ticket')
+                    project_name = ticket.get('project_name', 'No Project')
+                    stage_name = ticket.get('stage_name', 'Unknown')
+                    priority = ticket.get('priority', '0')
+                    is_closed = ticket.get('is_closed', False)
+
+                    # Priority labels
+                    priority_labels = {
+                        '0': 'Low',
+                        '1': 'Medium',
+                        '2': 'High',
+                        '3': 'Urgent'
+                    }
+                    priority_label = priority_labels.get(str(priority), 'Low')
+
+                    # Determine next action
+                    next_action, action_type = determine_ticket_next_action(ticket)
+
+                    # Format dates
+                    write_date = ticket.get('write_date', '')
+                    create_date = ticket.get('create_date', '')
+
+                    from datetime import datetime
+                    if write_date:
+                        write_date_formatted = datetime.strptime(write_date[:10], '%Y-%m-%d').strftime('%d.%m.%y')
+                    else:
+                        write_date_formatted = 'N/A'
+
+                    if create_date:
+                        create_date_formatted = datetime.strptime(create_date[:10], '%Y-%m-%d').strftime('%d.%m.%y')
+                    else:
+                        create_date_formatted = 'N/A'
+
+                    # State badge
+                    state_badge = 'badge-closed' if is_closed else 'badge-open'
+                    state_text = 'CLOSED' if is_closed else 'OPEN'
+
+                    # Get ticket description preview
+                    description = ticket.get('description', '')
+                    if description and description not in [False, None]:
+                        description_preview = get_first_n_words(description, 10)
+                    else:
+                        description_preview = ""
+
+                    html += f'''                        <div class="activity-card" data-state="{state_text}" data-action-type="{action_type}" data-type="ticket" data-customer="{customer}">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <div>
+                                    <span class="activity-type-badge activity-type-ticket" style="margin-right: 0.5rem; margin-bottom: 0;">TICKET</span>
+                                    <span class="badge {state_badge}">{state_text}</span>
+                                </div>
+                                <span class="item-meta" style="margin: 0;">Updated: {write_date_formatted}</span>
+                            </div>
+                            <h5>#{ticket_id} {ticket_name}</h5>
+                            <div class="item-meta" style="margin: 0.25rem 0;">
+                                <span class="odoo-customer-badge">{customer}</span>
+                                <span style="color: #666; font-size: 0.85rem;">Project: {project_name}</span>
+                            </div>
+                            <div class="item-meta" style="margin: 0.25rem 0;">
+                                Stage: {stage_name} | Priority: {priority_label} | Created: {create_date_formatted}
+                            </div>'''
+                    if description_preview:
+                        html += f'''
+                            <div class="text-preview">{description_preview}</div>'''
+                    html += f'''
+                            <div class="next-action {action_type}">{next_action}</div>
+                        </div>
+'''
+
+                html += '''                    </div>
+                </div>
+            </div>
+'''
+
+            html += '        </div>\n'
+
     html += '''    </div>
+
+    <script>
+    // Injected refresh rate from command-line argument (in milliseconds)
+    const REFRESH_RATE_MS = ''' + (str(refresh_rate_ms) if refresh_rate_ms else 'null') + ''';
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const showClosedToggle = document.getElementById('showClosedToggle');
+        const mainHeader = document.getElementById('mainHeader');
+        const cards = document.querySelectorAll('.activity-card');
+
+        let updateInterval = null;
+        let lastUpdateTime = null;
+        let rateLimitRemaining = 5000;
+        let rateLimitReset = null;
+
+        // Header scroll behavior
+        let lastScrollTop = 0;
+        window.addEventListener('scroll', function() {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+
+            if (scrollTop > 100) {
+                mainHeader.classList.add('minimized');
+            } else {
+                mainHeader.classList.remove('minimized');
+            }
+
+            lastScrollTop = scrollTop;
+        });
+
+        // Show/hide closed items
+        function updateCardVisibility() {
+            const showClosed = showClosedToggle.checked;
+
+            // Step 1: Hide/show activity cards based on closed state
+            cards.forEach(card => {
+                const state = card.getAttribute('data-state');
+                const actionType = card.getAttribute('data-action-type');
+
+                if (!showClosed && (state === 'CLOSED' || state === 'MERGED' || actionType === 'completed')) {
+                    card.classList.add('closed-item');
+                } else {
+                    card.classList.remove('closed-item');
+                }
+            });
+
+            // Step 2: Hide repo sections that have no visible cards
+            const repoSections = document.querySelectorAll('.section');
+            repoSections.forEach(section => {
+                const sectionCards = section.querySelectorAll('.activity-card');
+                const hasVisibleCards = Array.from(sectionCards).some(card =>
+                    !card.classList.contains('closed-item')
+                );
+
+                if (hasVisibleCards) {
+                    section.classList.remove('empty-section');
+                } else {
+                    section.classList.add('empty-section');
+                }
+            });
+
+            // Step 3: Hide developer sections that have no visible repo sections
+            const developerSections = document.querySelectorAll('.developer');
+            developerSections.forEach(devSection => {
+                const devRepoSections = devSection.querySelectorAll('.section');
+                const hasVisibleSections = Array.from(devRepoSections).some(section =>
+                    !section.classList.contains('empty-section')
+                );
+
+                if (hasVisibleSections) {
+                    devSection.classList.remove('empty-developer');
+                } else {
+                    devSection.classList.add('empty-developer');
+                }
+            });
+        }
+
+        // Initialize: hide closed by default
+        updateCardVisibility();
+        showClosedToggle.addEventListener('change', updateCardVisibility);
+
+        // Realtime updates logic
+        function updateLiveStatus(text, icon = 'ℹ️') {
+            // Status display elements removed - log to console instead
+            console.log(`[Live Updates] ${icon} ${text}`);
+        }
+
+        async function fetchGitHubData(repo, number, type) {
+            const [owner, repoName] = repo.split('/');
+            const endpoint = type === 'issue'
+                ? `https://api.github.com/repos/${owner}/${repoName}/issues/${number}`
+                : `https://api.github.com/repos/${owner}/${repoName}/pulls/${number}`;
+
+            try {
+                const response = await fetch(endpoint, {
+                    headers: {
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+
+                // Update rate limit info
+                rateLimitRemaining = parseInt(response.headers.get('X-RateLimit-Remaining')) || rateLimitRemaining;
+                rateLimitReset = response.headers.get('X-RateLimit-Reset');
+
+                if (!response.ok) {
+                    console.error(`Failed to fetch ${type} #${number}:`, response.status);
+                    return null;
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error(`Error fetching ${type} #${number}:`, error);
+                return null;
+            }
+        }
+
+        async function updateAllCards() {
+            if (rateLimitRemaining < 10) {
+                updateLiveStatus('Rate limit low - pausing updates', '⚠️');
+                stopLiveUpdates();
+                return;
+            }
+
+            updateLiveStatus('Updating...', '🔄');
+            let updatedCount = 0;
+
+            for (const card of cards) {
+                const type = card.getAttribute('data-type');
+                const repo = card.getAttribute('data-repo');
+                const number = card.getAttribute('data-number');
+                const currentComments = parseInt(card.getAttribute('data-total-comments'));
+
+                const data = await fetchGitHubData(repo, number, type);
+
+                if (data) {
+                    const newComments = data.comments || 0;
+                    const newState = data.state.toUpperCase();
+
+                    // Update comment count if changed
+                    if (newComments !== currentComments) {
+                        card.setAttribute('data-total-comments', newComments);
+                        card.classList.add('updating');
+
+                        // Find and update the comment count in the next-action div
+                        const nextAction = card.querySelector('.next-action');
+                        if (nextAction) {
+                            const commentMatch = nextAction.textContent.match(/💬 (\\d+) comment/);
+                            if (commentMatch) {
+                                nextAction.innerHTML = nextAction.innerHTML.replace(
+                                    /💬 \\d+ comment(s)?/,
+                                    `💬 ${newComments} comment${newComments !== 1 ? 's' : ''}`
+                                );
+                            }
+                        }
+
+                        setTimeout(() => card.classList.remove('updating'), 500);
+                        updatedCount++;
+                    }
+
+                    // Update state if changed
+                    if (newState !== card.getAttribute('data-state')) {
+                        card.setAttribute('data-state', newState);
+                        const badge = card.querySelector('.badge');
+                        if (badge) {
+                            badge.textContent = newState;
+                            badge.className = 'badge badge-' + (newState === 'MERGED' ? 'merged' : newState === 'OPEN' ? 'open' : 'closed');
+                        }
+                        updatedCount++;
+                    }
+                }
+
+                // Small delay to avoid hitting rate limits too fast
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            lastUpdateTime = new Date();
+            const timeStr = lastUpdateTime.toLocaleTimeString();
+            updateLiveStatus(`Last update: ${timeStr} | Rate limit: ${rateLimitRemaining}`, '✓');
+
+            if (updatedCount > 0) {
+                console.log(`Updated ${updatedCount} card(s) at ${timeStr}`);
+            }
+        }
+
+        function startLiveUpdates() {
+            // Use injected REFRESH_RATE_MS instead of UI selector
+            if (!REFRESH_RATE_MS) {
+                console.warn('No refresh rate configured');
+                return;
+            }
+
+            // Clear existing interval
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+
+            updateLiveStatus('Starting live updates...', '🔄');
+
+            // Initial update
+            updateAllCards();
+
+            // Set up periodic updates using injected refresh rate
+            updateInterval = setInterval(updateAllCards, REFRESH_RATE_MS);
+        }
+
+        function stopLiveUpdates() {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+            updateLiveStatus('Live updates stopped', '⏸️');
+        }
+
+        // Auto-start live updates if refresh rate was configured
+        if (REFRESH_RATE_MS) {
+            console.log(`Auto-starting live updates with refresh rate: ${REFRESH_RATE_MS}ms`);
+            startLiveUpdates();
+        }
+
+        // Check rate limit status every minute
+        setInterval(function() {
+            if (rateLimitReset && rateLimitRemaining < 100) {
+                const resetTime = new Date(parseInt(rateLimitReset) * 1000);
+                const now = new Date();
+                if (resetTime > now) {
+                    const minutesUntilReset = Math.ceil((resetTime - now) / 60000);
+                    updateLiveStatus(`⚠️ Low rate limit. Resets in ${minutesUntilReset}min`, false);
+                }
+            }
+        }, 60000);
+
+        // Speech Query Interface
+        ''' + speech_js + '''
+    });
+    </script>
+
+    <footer class="footer">''' + speech_button + ''' | © 2025 Ashant Chalasani and Alieh Vo | Licensed under <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a></footer>
 </body>
 </html>
 '''
@@ -1111,7 +2235,58 @@ def prompt_orgs_selection() -> list:
         return default_orgs.split(',')
 
 
+def parse_refresh_rate(rate_str: str) -> int:
+    """
+    Parse refresh rate string to milliseconds.
+    Formats: '10s', '30s', '5m', '10m'
+    Returns milliseconds, or None if invalid.
+    """
+    import re
+
+    if not rate_str:
+        return None
+
+    match = re.match(r'^(\d+)([sm])$', rate_str.lower())
+    if not match:
+        print(f"Warning: Invalid refresh rate format '{rate_str}'. Expected format: 10s, 5m, etc.", file=sys.stderr)
+        return None
+
+    value = int(match.group(1))
+    unit = match.group(2)
+
+    if unit == 's':
+        return value * 1000  # seconds to milliseconds
+    elif unit == 'm':
+        return value * 60 * 1000  # minutes to milliseconds
+
+    return None
+
+
+def load_env_file(env_file='.env'):
+    """Load environment variables from .env file if it exists."""
+    try:
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip empty lines and comments
+                if not line or line.startswith('#'):
+                    continue
+                # Parse KEY=VALUE
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Only set if not already in environment
+                    if key and key not in os.environ:
+                        os.environ[key] = value
+    except FileNotFoundError:
+        pass  # .env file is optional
+
+
 def main():
+    # Load environment variables from .env file if it exists
+    load_env_file()
+
     parser = argparse.ArgumentParser(
         description='Generate GitHub Engineering Activity Reports (EAR) for GitHub organizations',
         epilog='''
@@ -1168,6 +2343,51 @@ Output:
         default=None,
         help='(Deprecated: use --period instead) Number of days to look back'
     )
+    parser.add_argument(
+        '--open-browser',
+        action='store_true',
+        help='Open the generated report in Brave browser after 2 minutes'
+    )
+    parser.add_argument(
+        '--refreshrate',
+        type=str,
+        default=None,
+        help='Auto-refresh rate for live updates in the generated HTML report. Format: 10s, 30s, 5m, 10m (seconds with "s", minutes with "m"). Example: --refreshrate=10s for 10 seconds, --refreshrate=5m for 5 minutes. If not specified, no auto-refresh.'
+    )
+    parser.add_argument(
+        '--odoo-url',
+        type=str,
+        default=os.environ.get('ODOO_URL', 'https://erp.wapsol.de'),
+        help='Odoo server URL (default: ODOO_URL env var or https://erp.wapsol.de)'
+    )
+    parser.add_argument(
+        '--odoo-db',
+        type=str,
+        default=os.environ.get('ODOO_DB', 'wapsol'),
+        help='Odoo database name (default: ODOO_DB env var or wapsol)'
+    )
+    parser.add_argument(
+        '--odoo-user',
+        type=str,
+        default=os.environ.get('ODOO_USER', 'ashant@simplify-erp.de'),
+        help='Odoo username/email (default: ODOO_USER env var or ashant@simplify-erp.de)'
+    )
+    parser.add_argument(
+        '--odoo-password',
+        type=str,
+        default=None,
+        help='Odoo password (alternatively use ODOO_PASSWORD environment variable)'
+    )
+    parser.add_argument(
+        '--include-odoo',
+        action='store_true',
+        help='Include Odoo helpdesk tickets in the report'
+    )
+    parser.add_argument(
+        '--odoo-only',
+        action='store_true',
+        help='Generate report with only Odoo helpdesk data (skip GitHub)'
+    )
 
     args = parser.parse_args()
 
@@ -1207,29 +2427,91 @@ Output:
         filter_devs = set(dev.strip() for dev in args.devs.split(','))
         print(f"Filtering for developers: {', '.join(filter_devs)}", file=sys.stderr)
 
+    # Parse refresh rate
+    refresh_rate_ms = None
+    if args.refreshrate:
+        refresh_rate_ms = parse_refresh_rate(args.refreshrate)
+        if refresh_rate_ms:
+            print(f"Auto-refresh enabled: every {args.refreshrate}", file=sys.stderr)
+
     report_date = datetime.now().strftime('%Y-%m-%d')
 
     print(f"\nGenerating report for activity from {since_date} to {end_date}...", file=sys.stderr)
 
-    # Fetch data
-    data = fetch_recent_activity(orgs, since_date)
+    # Fetch GitHub data (unless --odoo-only is specified)
+    developer_activity = {}
+    if not args.odoo_only:
+        data = fetch_recent_activity(orgs, since_date)
 
-    # Aggregate by developer
-    print("Aggregating data by developer...", file=sys.stderr)
-    developer_activity = aggregate_by_developer(data, filter_devs)
+        # Aggregate by developer
+        print("Aggregating data by developer...", file=sys.stderr)
+        developer_activity = aggregate_by_developer(data, filter_devs)
 
-    if not developer_activity:
-        print("No activity found for the specified filters.", file=sys.stderr)
+        if not developer_activity:
+            print("No GitHub activity found for the specified filters.", file=sys.stderr)
+            if not args.include_odoo:
+                sys.exit(0)
+
+        print(f"Found activity for {len(developer_activity)} developer(s)", file=sys.stderr)
+
+    # Fetch Odoo data if requested
+    odoo_user_activity = None
+    if args.include_odoo or args.odoo_only:
+        # Get Odoo password from args or environment variable
+        odoo_password = args.odoo_password or os.environ.get('ODOO_PASSWORD')
+
+        if not odoo_password:
+            print("\nError: Odoo password not provided. Use --odoo-password or set ODOO_PASSWORD environment variable.", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"\nConnecting to Odoo at {args.odoo_url}...", file=sys.stderr)
+        try:
+            odoo = OdooAPI(args.odoo_url, args.odoo_db, args.odoo_user, odoo_password)
+
+            if not odoo.authenticate():
+                print("Failed to authenticate with Odoo. Exiting.", file=sys.stderr)
+                sys.exit(1)
+
+            # Fetch helpdesk tickets
+            tickets = odoo.fetch_helpdesk_tickets(since_date, end_date)
+
+            if not tickets:
+                print("No Odoo helpdesk tickets found for the specified period.", file=sys.stderr)
+            else:
+                print(f"Fetching Odoo metadata (users, partners, stages)...", file=sys.stderr)
+                # Fetch related data
+                users_map = odoo.fetch_users()
+                partners_map = odoo.fetch_partners()
+                stages_map = odoo.get_helpdesk_stages()
+
+                # Aggregate tickets by user
+                print("Aggregating Odoo tickets by user...", file=sys.stderr)
+                odoo_user_activity = aggregate_odoo_tickets_by_user(
+                    tickets, users_map, partners_map, stages_map,
+                    filter_users=filter_devs  # Use same filter as GitHub devs if provided
+                )
+
+                if odoo_user_activity:
+                    print(f"Found Odoo activity for {len(odoo_user_activity)} user(s)", file=sys.stderr)
+                else:
+                    print("No Odoo helpdesk activity found after filtering.", file=sys.stderr)
+
+        except Exception as e:
+            print(f"Error fetching Odoo data: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            sys.exit(1)
+
+    # Check if we have any data to report
+    if not developer_activity and not odoo_user_activity:
+        print("\nNo activity found for the specified filters and sources.", file=sys.stderr)
         sys.exit(0)
-
-    print(f"Found activity for {len(developer_activity)} developer(s)", file=sys.stderr)
 
     # Generate HTML report
     print("Generating HTML report...", file=sys.stderr)
-    html = generate_html_report(developer_activity, report_date, since_date, end_date, period_label, orgs)
+    html = generate_html_report(developer_activity, report_date, since_date, end_date, period_label, orgs, refresh_rate_ms, odoo_user_activity)
 
     # Create reports directory if it doesn't exist
-    import os
     os.makedirs('reports', exist_ok=True)
 
     # Write report
@@ -1239,6 +2521,19 @@ Output:
 
     print(f"\nReport generated successfully: {output_file}", file=sys.stderr)
     print(f"Open in browser: file://{os.path.abspath(output_file)}", file=sys.stderr)
+
+    # Open in browser if requested
+    if args.open_browser:
+        import time
+        import subprocess
+        print("\nWaiting 2 minutes before opening in browser...", file=sys.stderr)
+        time.sleep(120)  # Wait 2 minutes (120 seconds)
+        brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+        try:
+            subprocess.Popen([brave_path, f"file://{os.path.abspath(output_file)}"])
+            print(f"Opened report in Brave browser", file=sys.stderr)
+        except Exception as e:
+            print(f"Failed to open browser: {e}", file=sys.stderr)
 
 
 if __name__ == '__main__':

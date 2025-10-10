@@ -1,0 +1,24 @@
+# FastAPI and backend dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+
+# HTTP and web requests
+httpx==0.25.1
+
+# Speech recognition (Phase 2)
+SpeechRecognition==3.10.4
+pydub==0.25.1
+
+# Environment configuration
+python-dotenv==1.0.0
+
+# Python standard libs (included with Python but listed for documentation)
+# xmlrpc (built-in)
+# subprocess (built-in)
+# json (built-in)
+# argparse (built-in)
+# datetime (built-in)
+# collections (built-in)
+# typing (built-in)
+# re (built-in)

@@ -1,0 +1,53 @@
+Successfully authenticated to Odoo as ashant@simplify-erp.de
+INFO:     Started server process [52998]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Successfully authenticated to Odoo as ashant@simplify-erp.de
+INFO:__main__:Connected to Odoo at https://erp.wapsol.de
+INFO:__main__:Processing query from user ashant@simplify-erp.de (ID: 2): 'my tickets'
+INFO:__main__:Parsed domain: [('user_id', '=', 2)]
+INFO:__main__:Query summary: Your tickets (limit: 50)
+INFO:__main__:Query returned 50 tickets
+
+============================================================
+Odoo Query API Server - Startup
+============================================================
+
+🔍 Running startup health checks...
+
+✓ Checking configuration...
+  - URL: https://erp.wapsol.de
+  - Database: pwo-18-prod
+  - User: ashant@simplify-erp.de
+  - Password: ✓ Set
+
+✓ Testing Odoo authentication...
+  ✓ Authenticated as ashant@simplify-erp.de
+  ✓ User ID: 2
+
+✓ Testing Odoo query functionality...
+  ✓ Successfully queried Odoo (found 1 ticket)
+
+✅ All health checks passed!
+
+============================================================
+🚀 Starting API Server
+============================================================
+Server: http://localhost:8000
+API Docs: http://localhost:8000/docs
+Health: http://localhost:8000/health
+============================================================
+
+INFO:     127.0.0.1:58312 - "POST /api/search HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62320 - "GET /api/search HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:62320 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62366 - "GET /api/health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62380 - "GET /api/search HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:62589 - "GET /api/search HTTP/1.1" 405 Method Not Allowed
+INFO:__main__:Processing query from user ashant@simplify-erp.de (ID: 2): 'test'
+INFO:__main__:Parsed domain: [('user_id', '=', 2), ('close_date', '=', False)]
+INFO:__main__:Query summary: Your open tickets (limit: 50)
+INFO:__main__:Query returned 50 tickets
+INFO:     127.0.0.1:62600 - "POST /api/search HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50295 - "GET /api/search HTTP/1.1" 405 Method Not Allowed

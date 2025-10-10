@@ -1,0 +1,10 @@
+Starting HTTPS server on port 443...
+Access your reports at: https://localhost.ear
+Press Ctrl+C to stop the server
+
+Serving reports from: /Users/ashant/git2local/reports
+Latest report: EAR_2025-10-09.html
+
+Note: Your browser will show a security warning for the self-signed certificate.
+      This is normal. Click 'Advanced' and 'Proceed to localhost.ear' to continue.
+
